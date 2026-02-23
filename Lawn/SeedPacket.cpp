@@ -534,7 +534,7 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 		aPlantG.SetColor(Color(64, 64, 64, 255));
 		aPlantG.SetColorizeImages(true);
 		aPlantG.ClipRect(x, y, SEED_PACKET_WIDTH, aDarknessHeight);
-		TodDrawImageCelScaledF(&aPlantG, Sexy::IMAGE_SEEDS, x, y, aPacketBackground, 0, aPlantG.mScaleX, aPlantG.mScaleY);
+		TodDrawImageCelScaledF(&aPlantG, USE_CONSOLE_SEED_VARIANTS ? Sexy::IMAGE_CONSOLE_SEEDS : Sexy::IMAGE_SEEDS, x, y, aPacketBackground, 0, aPlantG.mScaleX, aPlantG.mScaleY); //WIDETWEAK: Fixed console seed packets rendering as the PC ones when selected or recharging
 		if (aDrawSeedInMiddle)
 		{
 			SeedPacketDrawSeed(&aPlantG, x, y, theSeedType, theImitaterType, aOffsetX, aOffsetY, aScale);

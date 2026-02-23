@@ -17,6 +17,7 @@ MiniCreditsScreen::MiniCreditsScreen(LawnApp* theApp)
 	mApp->mMusic->MakeSureMusicIsPlaying(MUSIC_TUNE_CHOOSE_YOUR_SEEDS);
 	TodLoadResources("DelayLoad_ChallengeScreen");
 	TodLoadResources("DelayLoad_Credits");
+	TodLoadResources("DelayLoad_Background6");
 
 	mBackButton = MakeNewButton(0, this, _S("[BACK_TO_MENU_BUTTON]"), nullptr, Sexy::IMAGE_SEEDCHOOSER_BUTTON2,
 		Sexy::IMAGE_SEEDCHOOSER_BUTTON2_GLOW, Sexy::IMAGE_SEEDCHOOSER_BUTTON2_GLOW);
@@ -48,7 +49,7 @@ MiniCreditsScreen::~MiniCreditsScreen()
 void MiniCreditsScreen::Draw(Graphics* g)
 {
 	//g->SetLinearBlend(true);
-	g->DrawImage(Sexy::IMAGE_CREDITS_BG, 0, 0);
+	g->DrawImage(Sexy::IMAGE_BACKGROUND6BOSS, 0, 0);
 	TodDrawString(g, "CREDITS", BOARD_WIDTH / 2, 58, Sexy::FONT_HOUSEOFTERROR28, Color(220, 220, 220), DS_ALIGN_CENTER);
 
 	Color TextColor = Color(255, 255, 255);
@@ -70,6 +71,11 @@ void MiniCreditsScreen::Draw(Graphics* g)
 
 	TodDrawString(g, "Enhanced Team \n", 400, 380, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
 	TodDrawString(g, "BULLETBOT\n", 400, 400, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
+
+	TodDrawString(g, "QEWide-Tweaks Credits \n", 400, 440, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
+	TodDrawString(g, "Cardboard\n", 400, 460, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
+	TodDrawString(g, "BoneL\n", 400, 480, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
+	TodDrawString(g, "PvZ MA Members\n", 400, 500, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
 
 	TodDrawString(g, "Special Thanks \n", 630, 420, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);
 	TodDrawString(g, "Electr0Gunner\n", 630, 440, Sexy::FONT_HOUSEOFTERROR16, TextColor, DS_ALIGN_CENTER);

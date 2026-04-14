@@ -120,9 +120,57 @@ jobs:
             Write-Warning "editbin not found – skipping PE checksum update."
           }
 
+      # ── Pre-optimize PNGs (lossless) ─────────────────────────────────────────
+      # oxipng binary is cached by version — only downloaded once per release.
+      - name: Resolve oxipng version
+        id: oxipng_ver
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
+          echo "tag=$($rel.tag_name)" >> $env:GITHUB_OUTPUT
+          echo "oxipng latest: $($rel.tag_name)"
+
+      - name: Cache oxipng binary
+        id: oxipng_cache
+        uses: actions/cache@v4
+        with:
+          path: oxipng_bin
+          key: oxipng-${{ steps.oxipng_ver.outputs.tag }}-windows-x64
+
+      - name: Download oxipng (cache miss only)
+        if: steps.oxipng_cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $rel   = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
+          $asset = $rel.assets |
+                     Where-Object { $_.name -match "x86_64-pc-windows-msvc" -and $_.name -match "\.zip$" } |
+                     Select-Object -First 1
+          Write-Host "Downloading oxipng $($rel.tag_name)..."
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "oxipng.zip" -UseBasicParsing
+          Expand-Archive "oxipng.zip" -DestinationPath "oxipng_bin" -Force
+
+      # Cache the optimized assets themselves based on their content hash.
+      # If the source PNGs haven't changed, we can skip the slow oxipng pass.
+      - name: Cache optimized PNG assets
+        id: asset_cache
+        uses: actions/cache@v4
+        with:
+          path: Debug/**/*.png
+          key: optimized-pngs-${{ hashFiles('Debug/**/*.png') }}
+
+      - name: Optimize PNGs with oxipng
+        if: steps.asset_cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $oxipng = Get-ChildItem "oxipng_bin" -Filter "oxipng.exe" -Recurse | Select-Object -First 1
+          if (-not $oxipng) { Write-Warning "oxipng not found, skipping"; exit 0 }
+
+          Write-Host "Optimizing PNG files in Debug/ with oxipng..."
+          # Process the Debug directory directly. Since this folder is cached,
+          # and we have a specific asset cache, subsequent runs will be instant.
+          & $oxipng.FullName --opt max --strip all --quiet --recursive "Debug"
+
       # ── Package: assemble the game folder ───────────────────────────────────
-      # For both configs we include the exe + bass.dll + all game asset dirs.
-      # For Release we also delete any leftover .pdb / .ilk from the output dir.
       - name: Assemble package folder
         shell: pwsh
         run: |
@@ -166,62 +214,6 @@ jobs:
           Write-Host "Package contents:"
           Get-ChildItem $pkg -Recurse | Select-Object FullName
 
-      # ── Pre-optimize PNGs (lossless) ─────────────────────────────────────────
-      # oxipng re-compresses every PNG with better zlib params + strips all
-      # metadata (text, gamma, timestamps, etc.) → 10–40% smaller PNGs before
-      # 7-Zip touches them.  The game image/particle PNGs are the bulk of the
-      # package, so this has the highest impact.
-      # oxipng binary is cached by version — only downloaded once per release.
-      - name: Resolve oxipng version
-        id: oxipng_ver
-        shell: pwsh
-        run: |
-          $rel = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
-          echo "tag=$($rel.tag_name)" >> $env:GITHUB_OUTPUT
-          echo "oxipng latest: $($rel.tag_name)"
-
-      - name: Cache oxipng binary
-        id: oxipng_cache
-        uses: actions/cache@v4
-        with:
-          path: oxipng_bin
-          key: oxipng-${{ steps.oxipng_ver.outputs.tag }}-windows-x64
-
-      - name: Download oxipng (cache miss only)
-        if: steps.oxipng_cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $rel   = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
-          $asset = $rel.assets |
-                     Where-Object { $_.name -match "x86_64-pc-windows-msvc" -and $_.name -match "\.zip$" } |
-                     Select-Object -First 1
-          Write-Host "Downloading oxipng $($rel.tag_name)..."
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "oxipng.zip" -UseBasicParsing
-          Expand-Archive "oxipng.zip" -DestinationPath "oxipng_bin" -Force
-          Write-Host "oxipng downloaded and cached."
-
-      - name: Optimize PNGs with oxipng
-        shell: pwsh
-        run: |
-          $oxipng = Get-ChildItem "oxipng_bin" -Filter "oxipng.exe" -Recurse | Select-Object -First 1
-          if (-not $oxipng) { Write-Warning "oxipng not found, skipping"; exit 0 }
-
-          $cfg  = "${{ matrix.config }}"
-          $pngs = Get-ChildItem "package_$cfg" -Filter "*.png" -Recurse
-          Write-Host "Optimizing $($pngs.Count) PNG files with oxipng..."
-
-          # --opt max  : maximum zlib search (slow but smallest output)
-          # --strip all: remove ALL ancillary chunks (metadata, gamma, text, etc.)
-          # --quiet    : suppress per-file output
-          # --recursive: process the directory to avoid command-line length limits
-          & $oxipng.FullName --opt max --strip all --quiet --recursive "package_$cfg"
-
-          # Report total savings
-          $before = ($pngs | Measure-Object Length -Sum).Sum
-          $after  = ($pngs | ForEach-Object { (Get-Item $_.FullName).Length } | Measure-Object -Sum).Sum
-          $saved  = [math]::Round(($before - $after) / 1MB, 2)
-          $pct    = [math]::Round(($before - $after) * 100 / $before, 1)
-          Write-Host "PNG optimization saved $saved MB ($pct%)"
 
       # ── Compress ─────────────────────────────────────────────────────────────
       # Format : 7z (BCJ2 → LZMA2) — absolute maximum compression
@@ -244,9 +236,7 @@ jobs:
           $args7z = @(
             "a", "-t7z", "-mx=9",
             "-m0=BCJ2",
-            "-m1=LZMA2:d=1536m:fb=273",
-            "-m2=LZMA2:d=128m",
-            "-m3=LZMA2:d=128m",
+            "-m1=LZMA2:d=128m:fb=273",
             "-ms=on", "-mmt=on", "-mmc=10000",
             $out, $src
           )

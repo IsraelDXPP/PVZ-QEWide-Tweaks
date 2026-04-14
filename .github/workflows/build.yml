@@ -86,21 +86,24 @@ jobs:
 
       # ── Strip debug symbols for Release (reduce size) ────────────────────────
       # MSBuild already compiles Release with /O2 + /GL + NDEBUG.
-      # We additionally run editbin to strip the checksum and optionally
-      # strip the PDB path embedded in the PE header to keep the binary clean.
+      # We additionally run editbin /RELEASE to set the PE checksum flag,
+      # which marks the binary as a final release build.
       - name: Strip Release binary (editbin)
         if: matrix.config == 'Release'
         shell: pwsh
         run: |
-          # Find vswhere to locate editbin
+          # Use vswhere -find to locate editbin instantly (no recursive dir scan)
           $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = & "$vsWhere" -latest -property installationPath
-          $editbin = Get-ChildItem "$vsPath" -Filter "editbin.exe" -Recurse -ErrorAction SilentlyContinue |
-                      Where-Object { $_.FullName -match 'x86' -or $_.FullName -match 'Hostx86' } |
+          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" |
                       Select-Object -First 1
+          if (-not $editbin) {
+            # Fallback: try any editbin vswhere can find
+            $editbin = & "$vsWhere" -latest -find "**\editbin.exe" |
+                        Select-Object -First 1
+          }
           if ($editbin) {
-            Write-Host "Running editbin: $($editbin.FullName)"
-            & "$($editbin.FullName)" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
+            Write-Host "Running editbin: $editbin"
+            & "$editbin" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
           } else {
             Write-Warning "editbin not found – skipping PE checksum update."
           }

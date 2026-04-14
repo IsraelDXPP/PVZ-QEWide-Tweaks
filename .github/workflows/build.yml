@@ -152,43 +152,46 @@ jobs:
           Get-ChildItem $pkg -Recurse | Select-Object FullName
 
       # ── Compress ─────────────────────────────────────────────────────────────
-      # Release → 7-Zip ultra (-mx=9) with solid archive + BCJ filter for EXEs
-      #           This is as small as a ZIP can possibly get.
-      # Debug   → PowerShell fast zip (size doesn't matter, speed does)
-      - name: Compress package (Release — 7-Zip ultra)
-        if: matrix.config == 'Release'
+      # Format: 7z (LZMA2) — far superior compression ratio vs ZIP (DEFLATE).
+      # Both Debug and Release use maximum LZMA2 ultra settings:
+      #   -t7z        → 7z container with LZMA2 codec
+      #   -mx=9       → ultra compression level
+      #   -m0=lzma2   → explicit LZMA2 codec
+      #   -md=1536m   → 1.5 GB dictionary (max practical; huge win on repetitive data)
+      #   -mfb=273    → max fast bytes for LZMA2
+      #   -ms=on      → solid mode (compress all files together = better ratio)
+      #   -mmt=on     → use all CPU cores
+      - name: Compress package
         shell: pwsh
         run: |
-          $7z = "C:\Program Files\7-Zip\7z.exe"
-          & "$7z" a `
-            -tzip `
-            -mx=9 `
-            -mfb=258 `
-            -mpass=15 `
-            -ms=on `
-            -mmt=on `
-            "QEWide-Tweaks-Release.zip" `
-            ".\package_Release\*"
-          $size = (Get-Item "QEWide-Tweaks-Release.zip").Length / 1MB
-          Write-Host "Release archive size: $([math]::Round($size,2)) MB"
+          $7z  = "C:\Program Files\7-Zip\7z.exe"
+          $cfg = "${{ matrix.config }}"
+          $out = "QEWide-Tweaks-$cfg.7z"
+          $src = "package_$cfg"
 
-      - name: Compress package (Debug — fast zip)
-        if: matrix.config == 'Debug'
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path "package_Debug\*" `
-            -DestinationPath "QEWide-Tweaks-Debug.zip" `
-            -CompressionLevel Fastest
-          $size = (Get-Item "QEWide-Tweaks-Debug.zip").Length / 1MB
-          Write-Host "Debug archive size: $([math]::Round($size,2)) MB"
+          $args7z = @(
+            "a", "-t7z", "-mx=9", "-m0=lzma2",
+            "-md=1536m", "-mfb=273", "-ms=on", "-mmt=on",
+            $out, $src
+          )
+
+          Write-Host "Running: 7z $($args7z -join ' ')"
+          & "$7z" @args7z
+
+          if (-not (Test-Path $out)) {
+            Write-Error "7-Zip did not produce $out"
+            exit 1
+          }
+
+          $sizeMB = [math]::Round((Get-Item $out).Length / 1MB, 2)
+          Write-Host "$cfg archive: $out ($sizeMB MB)"
 
       # ── Upload build artifact ────────────────────────────────────────────────
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: QEWide-Tweaks-${{ matrix.config }}
-          path: QEWide-Tweaks-${{ matrix.config }}.zip
+          path: QEWide-Tweaks-${{ matrix.config }}.7z
           retention-days: 30
           if-no-files-found: error
 
@@ -254,5 +257,5 @@ jobs:
 
             Built from commit `${{ github.sha }}` on branch `${{ github.ref_name }}`.
           files: |
-            dist/QEWide-Tweaks-Debug.zip
-            dist/QEWide-Tweaks-Release.zip
+            dist/QEWide-Tweaks-Debug.7z
+            dist/QEWide-Tweaks-Release.7z

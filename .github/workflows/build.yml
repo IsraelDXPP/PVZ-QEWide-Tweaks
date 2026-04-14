@@ -1,0 +1,226 @@
+name: Build & Release
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Triggers
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:          # Allow manual runs from the Actions tab
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shared environment
+# ──────────────────────────────────────────────────────────────────────────────
+env:
+  SOLUTION_FILE: PVZ-QEWide-Tweaks.sln
+  PROJECT_FILE:  SexyAppFramework/SexyAppBase.vcxproj
+  PLATFORM:      Win32
+
+jobs:
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. Build both configurations in parallel
+# ══════════════════════════════════════════════════════════════════════════════
+  build:
+    name: Build (${{ matrix.config }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false          # Don't cancel the other config if one fails
+      matrix:
+        config: [ Debug, Release ]
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # Full history needed for tag creation
+
+      # ── Setup Visual Studio / MSBuild ────────────────────────────────────── 
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      # ── Cache MSBuild intermediate objects ──────────────────────────────────
+      # Key: config name + hash of all source files that affect compilation
+      - name: Cache MSBuild intermediates
+        uses: actions/cache@v4
+        with:
+          path: |
+            SexyAppFramework/${{ matrix.config }}
+            ${{ matrix.config }}
+          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.cpp', '**/*.c', '**/*.h', '**/*.rc', '**/*.vcxproj') }}
+          restore-keys: |
+            msbuild-${{ matrix.config }}-
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build ${{ matrix.config }}|${{ env.PLATFORM }}
+        run: |
+          msbuild "${{ env.SOLUTION_FILE }}" `
+            /p:Configuration=${{ matrix.config }} `
+            /p:Platform=${{ env.PLATFORM }} `
+            /m `
+            /nologo `
+            /verbosity:minimal `
+            /p:UseMultiToolTask=true
+
+      # ── Locate the executable ────────────────────────────────────────────────
+      # The vcxproj outputs to a sibling of SexyAppFramework/ named after the
+      # config (Debug → Debug/, Release → Release/).
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          $exePath = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exePath) {
+            Write-Error "No .exe found in ${{ matrix.config }}/"
+            exit 1
+          }
+          Write-Host "Found executable: $($exePath.FullName)"
+          echo "EXE_PATH=$($exePath.DirectoryName)" >> $env:GITHUB_ENV
+          echo "EXE_NAME=$($exePath.Name)"          >> $env:GITHUB_ENV
+
+      # ── Strip debug symbols for Release (reduce size) ────────────────────────
+      # MSBuild already compiles Release with /O2 + /GL + NDEBUG.
+      # We additionally run editbin to strip the checksum and optionally
+      # strip the PDB path embedded in the PE header to keep the binary clean.
+      - name: Strip Release binary (editbin)
+        if: matrix.config == 'Release'
+        shell: pwsh
+        run: |
+          # Find vswhere to locate editbin
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & "$vsWhere" -latest -property installationPath
+          $editbin = Get-ChildItem "$vsPath" -Filter "editbin.exe" -Recurse -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match 'x86' -or $_.FullName -match 'Hostx86' } |
+                      Select-Object -First 1
+          if ($editbin) {
+            Write-Host "Running editbin: $($editbin.FullName)"
+            & "$($editbin.FullName)" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
+          } else {
+            Write-Warning "editbin not found – skipping PE checksum update."
+          }
+
+      # ── Package: assemble the game folder ───────────────────────────────────
+      # For both configs we include the exe + bass.dll + all game asset dirs.
+      # For Release we also delete any leftover .pdb / .ilk from the output dir.
+      - name: Assemble package folder
+        shell: pwsh
+        run: |
+          $pkg = "package_${{ matrix.config }}"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+
+          # --- Executable ---
+          Copy-Item "${{ matrix.config }}\${{ env.EXE_NAME }}" -Destination $pkg\
+
+          # --- Runtime DLL bundled at repo root ---
+          if (Test-Path "bass.dll")    { Copy-Item "bass.dll"    -Destination $pkg\ }
+
+          # --- Game asset directories that live inside Debug/ ---
+          $assetDirs = @(
+            "compiled", "data", "images", "languages",
+            "particles", "properties", "reanim",
+            "resourcepacks", "sounds"
+          )
+          foreach ($dir in $assetDirs) {
+            $src = "Debug\$dir"           # Assets always live alongside the Debug exe
+            if (Test-Path $src) {
+              Copy-Item $src -Destination $pkg\ -Recurse
+            }
+          }
+
+          # --- For Release: remove debug artefacts that may have snuck in ---
+          if ("${{ matrix.config }}" -eq "Release") {
+            Get-ChildItem $pkg -Recurse -Include "*.pdb","*.ilk","*.exp","*.map" |
+              Remove-Item -Force
+          }
+
+          Write-Host "Package contents:"
+          Get-ChildItem $pkg -Recurse | Select-Object FullName
+
+      # ── Compress (maximum compression for Release, normal for Debug) ─────────
+      - name: Compress package
+        shell: pwsh
+        run: |
+          $level = if ("${{ matrix.config }}" -eq "Release") { "Optimal" } else { "Fastest" }
+          Compress-Archive `
+            -Path "package_${{ matrix.config }}\*" `
+            -DestinationPath "QEWide-Tweaks-${{ matrix.config }}.zip" `
+            -CompressionLevel $level
+          $size = (Get-Item "QEWide-Tweaks-${{ matrix.config }}.zip").Length / 1MB
+          Write-Host "Archive size: $([math]::Round($size,2)) MB"
+
+      # ── Upload build artifact ────────────────────────────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QEWide-Tweaks-${{ matrix.config }}
+          path: QEWide-Tweaks-${{ matrix.config }}.zip
+          retention-days: 30
+          if-no-files-found: error
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Auto-tag + GitHub Release  (only on push to main/master, not on PRs)
+# ══════════════════════════════════════════════════════════════════════════════
+  release:
+    name: Create GitHub Release
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write           # Needed to create tags & releases
+
+    steps:
+      # ── Checkout (needed for tag operations) ─────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Generate a version tag from the current date + short SHA ─────────────
+      - name: Generate version tag
+        id: tag
+        run: |
+          TAG="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      # ── Download both zips produced by the build job ──────────────────────────
+      - name: Download Debug artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: QEWide-Tweaks-Debug
+          path: dist/
+
+      - name: Download Release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: QEWide-Tweaks-Release
+          path: dist/
+
+      # ── List what we have before publishing ──────────────────────────────────
+      - name: List dist contents
+        run: ls -lh dist/
+
+      # ── Create tag + GitHub Release with both zips attached ───────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:   ${{ steps.tag.outputs.tag }}
+          name:       "QEWide-Tweaks ${{ steps.tag.outputs.tag }}"
+          draft:      false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## QEWide-Tweaks — Automated Build
+
+            | Build | Description |
+            |-------|-------------|
+            | **Release** | Optimized build — best performance, smallest size. Recommended for playing. |
+            | **Debug**   | Full debug symbols, no optimizations. Use for testing & crash analysis. |
+
+            Built from commit `${{ github.sha }}` on branch `${{ github.ref_name }}`.
+          files: |
+            dist/QEWide-Tweaks-Debug.zip
+            dist/QEWide-Tweaks-Release.zip

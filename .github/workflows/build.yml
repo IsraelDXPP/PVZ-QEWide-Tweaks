@@ -44,15 +44,27 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       # ── Cache MSBuild intermediate objects ──────────────────────────────────
-      # Key: config name + hash of all source files that affect compilation
+      # Strategy: save a fresh cache every run (keyed by run_id).
+      # restore-keys falls back to the nearest previous run automatically.
+      #
+      # Why NOT hash source files as the key:
+      #   Hashing all .cpp/.h means ANY change = cache miss = full rebuild.
+      #   Instead we always restore the most recent cache and let MSBuild's
+      #   own incremental logic (via .obj/.tlog timestamps) decide what needs
+      #   recompiling — typically just the changed files.
+      #
+      # Cached paths:
+      #   SexyAppFramework/<cfg>/  → .obj, .tlog, .res (intermediate files)
+      #   <cfg>/                   → .exe, .pdb, .ilk (output files)
       - name: Cache MSBuild intermediates
         uses: actions/cache@v4
         with:
           path: |
             SexyAppFramework/${{ matrix.config }}
             ${{ matrix.config }}
-          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.cpp', '**/*.c', '**/*.h', '**/*.rc', '**/*.vcxproj') }}
+          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-${{ github.run_id }}
           restore-keys: |
+            msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-
             msbuild-${{ matrix.config }}-
 
       # ── Build ────────────────────────────────────────────────────────────────
@@ -201,7 +213,8 @@ jobs:
           # --opt max  : maximum zlib search (slow but smallest output)
           # --strip all: remove ALL ancillary chunks (metadata, gamma, text, etc.)
           # --quiet    : suppress per-file output
-          & $oxipng.FullName --opt max --strip all --quiet ($pngs.FullName)
+          # --recursive: process the directory to avoid command-line length limits
+          & $oxipng.FullName --opt max --strip all --quiet --recursive "package_$cfg"
 
           # Report total savings
           $before = ($pngs | Measure-Object Length -Sum).Sum

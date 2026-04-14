@@ -154,20 +154,72 @@ jobs:
           Write-Host "Package contents:"
           Get-ChildItem $pkg -Recurse | Select-Object FullName
 
+      # ── Pre-optimize PNGs (lossless) ─────────────────────────────────────────
+      # oxipng re-compresses every PNG with better zlib params + strips all
+      # metadata (text, gamma, timestamps, etc.) → 10–40% smaller PNGs before
+      # 7-Zip touches them.  The game image/particle PNGs are the bulk of the
+      # package, so this has the highest impact.
+      # oxipng binary is cached by version — only downloaded once per release.
+      - name: Resolve oxipng version
+        id: oxipng_ver
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
+          echo "tag=$($rel.tag_name)" >> $env:GITHUB_OUTPUT
+          echo "oxipng latest: $($rel.tag_name)"
+
+      - name: Cache oxipng binary
+        id: oxipng_cache
+        uses: actions/cache@v4
+        with:
+          path: oxipng_bin
+          key: oxipng-${{ steps.oxipng_ver.outputs.tag }}-windows-x64
+
+      - name: Download oxipng (cache miss only)
+        if: steps.oxipng_cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $rel   = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
+          $asset = $rel.assets |
+                     Where-Object { $_.name -match "x86_64-pc-windows-msvc" -and $_.name -match "\.zip$" } |
+                     Select-Object -First 1
+          Write-Host "Downloading oxipng $($rel.tag_name)..."
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "oxipng.zip" -UseBasicParsing
+          Expand-Archive "oxipng.zip" -DestinationPath "oxipng_bin" -Force
+          Write-Host "oxipng downloaded and cached."
+
+      - name: Optimize PNGs with oxipng
+        shell: pwsh
+        run: |
+          $oxipng = Get-ChildItem "oxipng_bin" -Filter "oxipng.exe" -Recurse | Select-Object -First 1
+          if (-not $oxipng) { Write-Warning "oxipng not found, skipping"; exit 0 }
+
+          $cfg  = "${{ matrix.config }}"
+          $pngs = Get-ChildItem "package_$cfg" -Filter "*.png" -Recurse
+          Write-Host "Optimizing $($pngs.Count) PNG files with oxipng..."
+
+          # --opt max  : maximum zlib search (slow but smallest output)
+          # --strip all: remove ALL ancillary chunks (metadata, gamma, text, etc.)
+          # --quiet    : suppress per-file output
+          & $oxipng.FullName --opt max --strip all --quiet ($pngs.FullName)
+
+          # Report total savings
+          $before = ($pngs | Measure-Object Length -Sum).Sum
+          $after  = ($pngs | ForEach-Object { (Get-Item $_.FullName).Length } | Measure-Object -Sum).Sum
+          $saved  = [math]::Round(($before - $after) / 1MB, 2)
+          $pct    = [math]::Round(($before - $after) * 100 / $before, 1)
+          Write-Host "PNG optimization saved $saved MB ($pct%)"
+
       # ── Compress ─────────────────────────────────────────────────────────────
-      # Format : 7z (LZMA2 + BCJ2 prefilter)
-      # BCJ2 is an x86 branch preprocessor: it converts CALL/JMP relative
-      # offsets in the .exe to absolute addresses, making them highly repetitive
-      # and far more compressible by LZMA2. This is the same codec chain that
-      # 7-Zip GUI uses under the "Ultra" preset.
+      # Format : 7z (BCJ2 → LZMA2) — absolute maximum compression
       #
       # Codec chain:
-      #   -m0=BCJ2              → x86 branch converter (splits stream into 4 parts)
-      #   -m1=LZMA2:d=1536m:fb=273 → main stream  (code)   with 1.5 GB dictionary
-      #   -m2=LZMA2:d=128m      → call stream  (CALL targets)
-      #   -m3=LZMA2:d=128m      → jump stream  (JMP targets)
-      #   -ms=on                → solid mode (all files share the same dictionary)
-      #   -mmt=on               → multi-threaded
+      #   BCJ2          → x86 branch preprocessor (CALL/JMP offset normalization)
+      #   LZMA2 m1      → main stream: 1.5 GB dictionary, 273 fast bytes
+      #   LZMA2 m2/m3   → call/jump streams: 128 MB dictionary
+      #   -ms=on        → solid mode (all files share one dictionary)
+      #   -mmc=10000    → 10000 analysis passes for solid archive header
+      #   -mmt=on       → all CPU cores
       - name: Compress package
         shell: pwsh
         run: |
@@ -182,7 +234,7 @@ jobs:
             "-m1=LZMA2:d=1536m:fb=273",
             "-m2=LZMA2:d=128m",
             "-m3=LZMA2:d=128m",
-            "-ms=on", "-mmt=on",
+            "-ms=on", "-mmt=on", "-mmc=10000",
             $out, $src
           )
 

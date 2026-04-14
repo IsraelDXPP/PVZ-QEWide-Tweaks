@@ -155,15 +155,19 @@ jobs:
           Get-ChildItem $pkg -Recurse | Select-Object FullName
 
       # ── Compress ─────────────────────────────────────────────────────────────
-      # Format: 7z (LZMA2) — far superior compression ratio vs ZIP (DEFLATE).
-      # Both Debug and Release use maximum LZMA2 ultra settings:
-      #   -t7z        → 7z container with LZMA2 codec
-      #   -mx=9       → ultra compression level
-      #   -m0=lzma2   → explicit LZMA2 codec
-      #   -md=1536m   → 1.5 GB dictionary (max practical; huge win on repetitive data)
-      #   -mfb=273    → max fast bytes for LZMA2
-      #   -ms=on      → solid mode (compress all files together = better ratio)
-      #   -mmt=on     → use all CPU cores
+      # Format : 7z (LZMA2 + BCJ2 prefilter)
+      # BCJ2 is an x86 branch preprocessor: it converts CALL/JMP relative
+      # offsets in the .exe to absolute addresses, making them highly repetitive
+      # and far more compressible by LZMA2. This is the same codec chain that
+      # 7-Zip GUI uses under the "Ultra" preset.
+      #
+      # Codec chain:
+      #   -m0=BCJ2              → x86 branch converter (splits stream into 4 parts)
+      #   -m1=LZMA2:d=1536m:fb=273 → main stream  (code)   with 1.5 GB dictionary
+      #   -m2=LZMA2:d=128m      → call stream  (CALL targets)
+      #   -m3=LZMA2:d=128m      → jump stream  (JMP targets)
+      #   -ms=on                → solid mode (all files share the same dictionary)
+      #   -mmt=on               → multi-threaded
       - name: Compress package
         shell: pwsh
         run: |
@@ -173,8 +177,12 @@ jobs:
           $src = "package_$cfg"
 
           $args7z = @(
-            "a", "-t7z", "-mx=9", "-m0=lzma2",
-            "-md=1536m", "-mfb=273", "-ms=on", "-mmt=on",
+            "a", "-t7z", "-mx=9",
+            "-m0=BCJ2",
+            "-m1=LZMA2:d=1536m:fb=273",
+            "-m2=LZMA2:d=128m",
+            "-m3=LZMA2:d=128m",
+            "-ms=on", "-mmt=on",
             $out, $src
           )
 

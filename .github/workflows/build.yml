@@ -151,17 +151,37 @@ jobs:
           Write-Host "Package contents:"
           Get-ChildItem $pkg -Recurse | Select-Object FullName
 
-      # ── Compress (maximum compression for Release, normal for Debug) ─────────
-      - name: Compress package
+      # ── Compress ─────────────────────────────────────────────────────────────
+      # Release → 7-Zip ultra (-mx=9) with solid archive + BCJ filter for EXEs
+      #           This is as small as a ZIP can possibly get.
+      # Debug   → PowerShell fast zip (size doesn't matter, speed does)
+      - name: Compress package (Release — 7-Zip ultra)
+        if: matrix.config == 'Release'
         shell: pwsh
         run: |
-          $level = if ("${{ matrix.config }}" -eq "Release") { "Optimal" } else { "Fastest" }
+          $7z = "C:\Program Files\7-Zip\7z.exe"
+          & "$7z" a `
+            -tzip `
+            -mx=9 `
+            -mfb=258 `
+            -mpass=15 `
+            -ms=on `
+            -mmt=on `
+            "QEWide-Tweaks-Release.zip" `
+            ".\package_Release\*"
+          $size = (Get-Item "QEWide-Tweaks-Release.zip").Length / 1MB
+          Write-Host "Release archive size: $([math]::Round($size,2)) MB"
+
+      - name: Compress package (Debug — fast zip)
+        if: matrix.config == 'Debug'
+        shell: pwsh
+        run: |
           Compress-Archive `
-            -Path "package_${{ matrix.config }}\*" `
-            -DestinationPath "QEWide-Tweaks-${{ matrix.config }}.zip" `
-            -CompressionLevel $level
-          $size = (Get-Item "QEWide-Tweaks-${{ matrix.config }}.zip").Length / 1MB
-          Write-Host "Archive size: $([math]::Round($size,2)) MB"
+            -Path "package_Debug\*" `
+            -DestinationPath "QEWide-Tweaks-Debug.zip" `
+            -CompressionLevel Fastest
+          $size = (Get-Item "QEWide-Tweaks-Debug.zip").Length / 1MB
+          Write-Host "Debug archive size: $([math]::Round($size,2)) MB"
 
       # ── Upload build artifact ────────────────────────────────────────────────
       - name: Upload artifact

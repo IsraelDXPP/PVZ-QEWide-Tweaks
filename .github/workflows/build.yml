@@ -117,6 +117,15 @@ jobs:
           # --- Executable ---
           Copy-Item "${{ matrix.config }}\${{ env.EXE_NAME }}" -Destination $pkg\
 
+          # --- PDB (Debug only) — needed for debuggers and crash dump analysis ---
+          if ("${{ matrix.config }}" -eq "Debug") {
+            $pdb = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.pdb" | Select-Object -First 1
+            if ($pdb) {
+              Copy-Item $pdb.FullName -Destination $pkg\
+              Write-Host "Included PDB: $($pdb.Name)"
+            }
+          }
+
           # --- Runtime DLL bundled at repo root ---
           if (Test-Path "bass.dll")    { Copy-Item "bass.dll"    -Destination $pkg\ }
 

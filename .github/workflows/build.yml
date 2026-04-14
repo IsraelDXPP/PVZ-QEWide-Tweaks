@@ -23,105 +23,13 @@ jobs:
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. Build both configurations in parallel
 # ══════════════════════════════════════════════════════════════════════════════
-  build:
-    name: Build (${{ matrix.config }})
+  assets:
+    name: Optimize Assets
     runs-on: windows-latest
-
-    strategy:
-      fail-fast: false          # Don't cancel the other config if one fails
-      matrix:
-        config: [ Debug, Release ]
-
     steps:
-      # ── Checkout ────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0        # Full history needed for tag creation
 
-      # ── Setup Visual Studio / MSBuild ────────────────────────────────────── 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      # ── Cache MSBuild intermediate objects ──────────────────────────────────
-      # Strategy: save a fresh cache every run (keyed by run_id).
-      # restore-keys falls back to the nearest previous run automatically.
-      #
-      # Why NOT hash source files as the key:
-      #   Hashing all .cpp/.h means ANY change = cache miss = full rebuild.
-      #   Instead we always restore the most recent cache and let MSBuild's
-      #   own incremental logic (via .obj/.tlog timestamps) decide what needs
-      #   recompiling — typically just the changed files.
-      #
-      # Cached paths:
-      #   SexyAppFramework/<cfg>/  → .obj, .tlog, .res (intermediate files)
-      #   <cfg>/                   → .exe, .pdb, .ilk (output files)
-      - name: Cache MSBuild intermediates
-        uses: actions/cache@v4
-        with:
-          path: |
-            SexyAppFramework/${{ matrix.config }}
-            ${{ matrix.config }}
-          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-${{ github.run_id }}
-          restore-keys: |
-            msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-
-            msbuild-${{ matrix.config }}-
-
-      # ── Build ────────────────────────────────────────────────────────────────
-      # The .sln exposes the platform as "x86" (not "Win32").
-      # MSBuild validates against the solution config map, so x86 must be used
-      # when targeting the .sln. The .vcxproj internally maps x86 → Win32.
-      - name: Build ${{ matrix.config }}|${{ env.PLATFORM }}
-        run: |
-          msbuild "${{ env.SOLUTION_FILE }}" `
-            /p:Configuration=${{ matrix.config }} `
-            "/p:Platform=${{ env.PLATFORM }}" `
-            /m `
-            /nologo `
-            /verbosity:minimal `
-            /p:UseMultiToolTask=true
-
-      # ── Locate the executable ────────────────────────────────────────────────
-      # The vcxproj outputs to a sibling of SexyAppFramework/ named after the
-      # config (Debug → Debug/, Release → Release/).
-      - name: Verify executable exists
-        shell: pwsh
-        run: |
-          $exePath = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exePath) {
-            Write-Error "No .exe found in ${{ matrix.config }}/"
-            exit 1
-          }
-          Write-Host "Found executable: $($exePath.FullName)"
-          echo "EXE_PATH=$($exePath.DirectoryName)" >> $env:GITHUB_ENV
-          echo "EXE_NAME=$($exePath.Name)"          >> $env:GITHUB_ENV
-
-      # ── Strip debug symbols for Release (reduce size) ────────────────────────
-      # MSBuild already compiles Release with /O2 + /GL + NDEBUG.
-      # We additionally run editbin /RELEASE to set the PE checksum flag,
-      # which marks the binary as a final release build.
-      - name: Strip Release binary (editbin)
-        if: matrix.config == 'Release'
-        shell: pwsh
-        run: |
-          # Use vswhere -find to locate editbin instantly (no recursive dir scan)
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" |
-                      Select-Object -First 1
-          if (-not $editbin) {
-            # Fallback: try any editbin vswhere can find
-            $editbin = & "$vsWhere" -latest -find "**\editbin.exe" |
-                        Select-Object -First 1
-          }
-          if ($editbin) {
-            Write-Host "Running editbin: $editbin"
-            & "$editbin" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
-          } else {
-            Write-Warning "editbin not found – skipping PE checksum update."
-          }
-
-      # ── Pre-optimize PNGs (lossless) ─────────────────────────────────────────
-      # oxipng binary is cached by version — only downloaded once per release.
       - name: Resolve oxipng version
         id: oxipng_ver
         shell: pwsh
@@ -149,8 +57,6 @@ jobs:
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "oxipng.zip" -UseBasicParsing
           Expand-Archive "oxipng.zip" -DestinationPath "oxipng_bin" -Force
 
-      # Cache the optimized assets themselves based on their content hash.
-      # If the source PNGs haven't changed, we can skip the slow oxipng pass.
       - name: Cache optimized PNG assets
         id: asset_cache
         uses: actions/cache@v4
@@ -166,9 +72,89 @@ jobs:
           if (-not $oxipng) { Write-Warning "oxipng not found, skipping"; exit 0 }
 
           Write-Host "Optimizing PNG files in Debug/ with oxipng..."
-          # Process the Debug directory directly. Since this folder is cached,
-          # and we have a specific asset cache, subsequent runs will be instant.
           & $oxipng.FullName --opt max --strip all --quiet --recursive "Debug"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Build both configurations in parallel
+# ══════════════════════════════════════════════════════════════════════════════
+  build:
+    name: Build (${{ matrix.config }})
+    needs: assets
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [ Debug, Release ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore optimized PNG assets
+        uses: actions/cache@v4
+        with:
+          path: Debug/**/*.png
+          key: optimized-pngs-${{ hashFiles('Debug/**/*.png') }}
+          fail-on-cache-miss: false
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Cache MSBuild intermediates
+        uses: actions/cache@v4
+        with:
+          path: |
+            SexyAppFramework/${{ matrix.config }}
+            ${{ matrix.config }}
+          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-${{ github.run_id }}
+          restore-keys: |
+            msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-
+            msbuild-${{ matrix.config }}-
+
+      - name: Build ${{ matrix.config }}|${{ env.PLATFORM }}
+        run: |
+          msbuild "${{ env.SOLUTION_FILE }}" `
+            /p:Configuration=${{ matrix.config }} `
+            "/p:Platform=${{ env.PLATFORM }}" `
+            /m `
+            /nologo `
+            /verbosity:minimal `
+            /p:UseMultiToolTask=true
+
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          $exePath = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exePath) {
+            Write-Error "No .exe found in ${{ matrix.config }}/"
+            exit 1
+          }
+          Write-Host "Found executable: $($exePath.FullName)"
+          echo "EXE_PATH=$($exePath.DirectoryName)" >> $env:GITHUB_ENV
+          echo "EXE_NAME=$($exePath.Name)"          >> $env:GITHUB_ENV
+
+      - name: Strip Release binary (editbin)
+        if: matrix.config == 'Release'
+        shell: pwsh
+        run: |
+          # Use vswhere -find to locate editbin instantly (no recursive dir scan)
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" |
+                      Select-Object -First 1
+          if (-not $editbin) {
+            # Fallback: try any editbin vswhere can find
+            $editbin = & "$vsWhere" -latest -find "**\editbin.exe" |
+                        Select-Object -First 1
+          }
+          if ($editbin) {
+            Write-Host "Running editbin: $editbin"
+            & "$editbin" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
+          } else {
+            Write-Warning "editbin not found – skipping PE checksum update."
+          }
 
       # ── Package: assemble the game folder ───────────────────────────────────
       - name: Assemble package folder
@@ -235,10 +221,9 @@ jobs:
 
           $args7z = @(
             "a", "-t7z", "-mx=9",
-            "-m0=BCJ2",
-            "-m1=LZMA2:d=128m:fb=273",
-            "-ms=on", "-mmt=on", "-mmc=10000",
-            $out, $src
+            "-m0=lzma2", "-md=128m", "-mfb=273",
+            "-ms=on", "-mmt=on",
+            $out, "./$src/*"
           )
 
           Write-Host "Running: 7z $($args7z -join ' ')"

@@ -16,7 +16,7 @@ on:
 env:
   SOLUTION_FILE: PVZ-QEWide-Tweaks.sln
   PROJECT_FILE:  SexyAppFramework/SexyAppBase.vcxproj
-  PLATFORM:      Win32
+  PLATFORM:      x86
 
 jobs:
 
@@ -56,11 +56,14 @@ jobs:
             msbuild-${{ matrix.config }}-
 
       # ── Build ────────────────────────────────────────────────────────────────
+      # The .sln exposes the platform as "x86" (not "Win32").
+      # MSBuild validates against the solution config map, so x86 must be used
+      # when targeting the .sln. The .vcxproj internally maps x86 → Win32.
       - name: Build ${{ matrix.config }}|${{ env.PLATFORM }}
         run: |
           msbuild "${{ env.SOLUTION_FILE }}" `
             /p:Configuration=${{ matrix.config }} `
-            /p:Platform=${{ env.PLATFORM }} `
+            "/p:Platform=${{ env.PLATFORM }}" `
             /m `
             /nologo `
             /verbosity:minimal `

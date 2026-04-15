@@ -1,12 +1,23 @@
 # QEWide-Tweaks
-An edit of Quality Enhanced Wide that addresses and fixes many of the bugs that that decompilation (and the ones it was based off of) brought.
-## Original Credits:
-BULL3TB0T
 
-Electr0Gunner
+Una edición de Quality Enhanced Wide que corrige y mejora muchos de los errores presentes en esa decompilación (y en las que sirvieron como base).
 
-Ultra Wide Expansion Team
-## QEWide-Tweaks Credits:
-Cardboard for actually creating a fork and implementing all these bugfixes into a single decomp
+## ⚠️ Cambios importantes
 
-BoneL and all the people who contributed to the bug hunting forum in PvZ MA
+* Se modificó el sistema de compilación.
+* Se agregó `build.yml` (implementado por IsraelProyects).
+* Se modificó `SexyAppBase.vcxproj.user`.
+
+Estos cambios pueden romper compatibilidad con otros proyectos. Si necesitas restaurarla, deberás ajustar el workflow y la configuración para volver a usar la carpeta `Debug`.
+
+## Créditos originales:
+
+* BULL3TB0T
+* Electr0Gunner
+* Ultra Wide Expansion Team
+
+## Créditos de QEWide-Tweaks:
+
+* Cardboard por crear el fork e implementar múltiples correcciones en una sola decompilación
+* BoneL y todos los contribuidores del foro de bug hunting en PvZ MA
+* IsraelProyects (CI/CD y build system)

@@ -135,9 +135,10 @@ jobs:
         shell: pwsh
         run: |
           $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" | Select-Object -First 1
+          $vsPath  = & "$vsWhere" -latest -property installationPath
+          $editbin = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC\*\bin\Hostx86\x86\editbin.exe" | Select-Object -First 1
           if ($editbin) {
-            & "$editbin" /NOLOGO /RELEASE "${{ env.EXE_PATH }}"
+            & "$($editbin.FullName)" /NOLOGO /RELEASE "${{ env.EXE_PATH }}"
           } else {
             Write-Warning "editbin not found."
           }

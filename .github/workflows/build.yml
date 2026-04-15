@@ -181,18 +181,12 @@ jobs:
           $src = "package_$cfg"
 
           # BCJ2 Chain Configuration:
-          # Stream 0: BCJ2 Filter
+          # Stream 0: BCJ2 Filter (automatic stream management)
           # Stream 1: LZMA2 Main Code (128MB dict)
-          # Stream 2: LZMA2 CALL Targets (16MB dict)
-          # Stream 3: LZMA2 JUMP Targets (16MB dict)
           $args7z = @(
             "a", "-t7z", "-mx=9",
             "-m0=bcj2",
             "-m1=lzma2:d=128m:fb=273",
-            "-m2=lzma2:d=16m",
-            "-m3=lzma2:d=16m",
-            "-mb0:1", "-mb0s1:2", "-mb0s2:3",
-            "-mmc=10000",
             "-ms=on", "-mmt=on",
             $out, "./$src/*"
           )

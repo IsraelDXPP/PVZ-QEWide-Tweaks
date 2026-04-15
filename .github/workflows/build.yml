@@ -8,20 +8,21 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:          # Allow manual runs from the Actions tab
+  workflow_dispatch:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared environment
 # ──────────────────────────────────────────────────────────────────────────────
 env:
   SOLUTION_FILE: PVZ-QEWide-Tweaks.sln
-  PROJECT_FILE:  SexyAppFramework/SexyAppBase.vcxproj
   PLATFORM:      x86
+  ASSET_SRC:     game_assets
+  PACKAGE_BASE:  QEWide-Tweaks
 
 jobs:
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1. Build both configurations in parallel
+# 1. Optimize Assets (PNG)
 # ══════════════════════════════════════════════════════════════════════════════
   assets:
     name: Optimize Assets
@@ -50,9 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $rel   = Invoke-RestMethod "https://api.github.com/repos/shssoichiro/oxipng/releases/latest"
-          $asset = $rel.assets |
-                     Where-Object { $_.name -match "x86_64-pc-windows-msvc" -and $_.name -match "\.zip$" } |
-                     Select-Object -First 1
+          $asset = $rel.assets | Where-Object { $_.name -match "x86_64-pc-windows-msvc" -and $_.name -match "\.zip$" } | Select-Object -First 1
           Write-Host "Downloading oxipng $($rel.tag_name)..."
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "oxipng.zip" -UseBasicParsing
           Expand-Archive "oxipng.zip" -DestinationPath "oxipng_bin" -Force
@@ -61,21 +60,21 @@ jobs:
         id: asset_cache
         uses: actions/cache@v4
         with:
-          path: Debug/**/*.png
-          key: optimized-pngs-${{ hashFiles('Debug/**/*.png') }}
+          path: ${{ env.ASSET_SRC }}/**/*.png
+          key: optimized-pngs-${{ hashFiles('game_assets/**/*.png') }}
 
       - name: Optimize PNGs with oxipng
         if: steps.asset_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $oxipng = Get-ChildItem "oxipng_bin" -Filter "oxipng.exe" -Recurse | Select-Object -First 1
-          if (-not $oxipng) { Write-Warning "oxipng not found, skipping"; exit 0 }
+          if (-not $oxipng) { Write-Error "oxipng not found"; exit 1 }
 
-          Write-Host "Optimizing PNG files in Debug/ with oxipng..."
-          & $oxipng.FullName --opt max --strip all --quiet --recursive "Debug"
+          Write-Host "Optimizing PNG files in ${{ env.ASSET_SRC }}..."
+          & $oxipng.FullName --opt max --strip all --quiet --recursive "${{ env.ASSET_SRC }}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. Build both configurations in parallel
+# 2. Build configurations
 # ══════════════════════════════════════════════════════════════════════════════
   build:
     name: Build (${{ matrix.config }})
@@ -96,8 +95,8 @@ jobs:
       - name: Restore optimized PNG assets
         uses: actions/cache@v4
         with:
-          path: Debug/**/*.png
-          key: optimized-pngs-${{ hashFiles('Debug/**/*.png') }}
+          path: ${{ env.ASSET_SRC }}/**/*.png
+          key: optimized-pngs-${{ hashFiles('game_assets/**/*.png') }}
           fail-on-cache-miss: false
 
       - name: Add MSBuild to PATH
@@ -109,9 +108,8 @@ jobs:
           path: |
             SexyAppFramework/${{ matrix.config }}
             ${{ matrix.config }}
-          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-${{ github.run_id }}
+          key: msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}
           restore-keys: |
-            msbuild-${{ matrix.config }}-${{ hashFiles('**/*.vcxproj', '**/*.sln') }}-
             msbuild-${{ matrix.config }}-
 
       - name: Build ${{ matrix.config }}|${{ env.PLATFORM }}
@@ -128,185 +126,125 @@ jobs:
         shell: pwsh
         run: |
           $exePath = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exePath) {
-            Write-Error "No .exe found in ${{ matrix.config }}/"
-            exit 1
-          }
-          Write-Host "Found executable: $($exePath.FullName)"
-          echo "EXE_PATH=$($exePath.DirectoryName)" >> $env:GITHUB_ENV
-          echo "EXE_NAME=$($exePath.Name)"          >> $env:GITHUB_ENV
+          if (-not $exePath) { Write-Error "No .exe found in ${{ matrix.config }}/"; exit 1 }
+          echo "EXE_PATH=$($exePath.FullName)" >> $env:GITHUB_ENV
+          echo "EXE_NAME=$($exePath.Name)"     >> $env:GITHUB_ENV
 
       - name: Strip Release binary (editbin)
         if: matrix.config == 'Release'
         shell: pwsh
         run: |
-          # Use vswhere -find to locate editbin instantly (no recursive dir scan)
           $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" |
-                      Select-Object -First 1
-          if (-not $editbin) {
-            # Fallback: try any editbin vswhere can find
-            $editbin = & "$vsWhere" -latest -find "**\editbin.exe" |
-                        Select-Object -First 1
-          }
+          $editbin = & "$vsWhere" -latest -find "**\Hostx86\x86\editbin.exe" | Select-Object -First 1
           if ($editbin) {
-            Write-Host "Running editbin: $editbin"
-            & "$editbin" /NOLOGO /RELEASE "${{ matrix.config }}\${{ env.EXE_NAME }}"
+            & "$editbin" /NOLOGO /RELEASE "${{ env.EXE_PATH }}"
           } else {
-            Write-Warning "editbin not found – skipping PE checksum update."
+            Write-Warning "editbin not found."
           }
 
-      # ── Package: assemble the game folder ───────────────────────────────────
+      # ── Package ─────────────────────────────────────────────────────────────
       - name: Assemble package folder
         shell: pwsh
         run: |
           $pkg = "package_${{ matrix.config }}"
           New-Item -ItemType Directory -Force -Path $pkg | Out-Null
 
-          # --- Executable ---
-          Copy-Item "${{ matrix.config }}\${{ env.EXE_NAME }}" -Destination $pkg\
+          # Copy Executable
+          Copy-Item "${{ env.EXE_PATH }}" -Destination $pkg\
 
-          # --- PDB (Debug only) — needed for debuggers and crash dump analysis ---
+          # Include PDB for Debug
           if ("${{ matrix.config }}" -eq "Debug") {
-            $pdb = Get-ChildItem -Path "${{ matrix.config }}" -Filter "*.pdb" | Select-Object -First 1
-            if ($pdb) {
-              Copy-Item $pdb.FullName -Destination $pkg\
-              Write-Host "Included PDB: $($pdb.Name)"
-            }
+            Get-ChildItem "${{ matrix.config }}" -Filter "*.pdb" | Copy-Item -Destination $pkg\
           }
 
-          # --- Runtime DLL bundled at repo root ---
-          if (Test-Path "bass.dll")    { Copy-Item "bass.dll"    -Destination $pkg\ }
-
-          # --- Game asset directories that live inside Debug/ ---
-          $assetDirs = @(
-            "compiled", "data", "images", "languages",
-            "particles", "properties", "reanim",
-            "resourcepacks", "sounds"
-          )
+          # Include Assets from centralized source
+          $assetDirs = @("compiled", "data", "images", "languages", "particles", "properties", "reanim", "resourcepacks", "sounds", "bass.dll")
           foreach ($dir in $assetDirs) {
-            $src = "Debug\$dir"           # Assets always live alongside the Debug exe
+            $src = "${{ env.ASSET_SRC }}/$dir"
             if (Test-Path $src) {
               Copy-Item $src -Destination $pkg\ -Recurse
             }
           }
 
-          # --- For Release: remove debug artefacts that may have snuck in ---
+          # Clean up Release package
           if ("${{ matrix.config }}" -eq "Release") {
-            Get-ChildItem $pkg -Recurse -Include "*.pdb","*.ilk","*.exp","*.map" |
-              Remove-Item -Force
+            Get-ChildItem $pkg -Recurse -Include "*.pdb","*.ilk","*.exp","*.map" | Remove-Item -Force
           }
 
-          Write-Host "Package contents:"
-          Get-ChildItem $pkg -Recurse | Select-Object FullName
-
-
-      # ── Compress ─────────────────────────────────────────────────────────────
-      # Format : 7z (BCJ2 → LZMA2) — absolute maximum compression
-      #
-      # Codec chain:
-      #   BCJ2          → x86 branch preprocessor (CALL/JMP offset normalization)
-      #   LZMA2 m1      → main stream: 1.5 GB dictionary, 273 fast bytes
-      #   LZMA2 m2/m3   → call/jump streams: 128 MB dictionary
-      #   -ms=on        → solid mode (all files share one dictionary)
-      #   -mmc=10000    → 10000 analysis passes for solid archive header
-      #   -mmt=on       → all CPU cores
+      # ── Ultra Compression (BCJ2 + LZMA2) ────────────────────────────────────
       - name: Compress package
         shell: pwsh
         run: |
           $7z  = "C:\Program Files\7-Zip\7z.exe"
           $cfg = "${{ matrix.config }}"
-          $out = "QEWide-Tweaks-$cfg.7z"
+          $out = "${{ env.PACKAGE_BASE }}-$cfg.7z"
           $src = "package_$cfg"
 
+          # BCJ2 Chain Configuration:
+          # Stream 0: BCJ2 Filter
+          # Stream 1: LZMA2 Main Code (128MB dict)
+          # Stream 2: LZMA2 CALL Targets (16MB dict)
+          # Stream 3: LZMA2 JUMP Targets (16MB dict)
           $args7z = @(
             "a", "-t7z", "-mx=9",
-            "-m0=lzma2", "-md=128m", "-mfb=273",
+            "-m0=bcj2",
+            "-m1=lzma2:d=128m:fb=273",
+            "-m2=lzma2:d=16m",
+            "-m3=lzma2:d=16m",
+            "-mb0:1", "-mb0s1:2", "-mb0s2:3",
+            "-mmc=10000",
             "-ms=on", "-mmt=on",
             $out, "./$src/*"
           )
 
-          Write-Host "Running: 7z $($args7z -join ' ')"
           & "$7z" @args7z
+          if (-not (Test-Path $out)) { Write-Error "7-Zip failed to produce $out"; exit 1 }
 
-          if (-not (Test-Path $out)) {
-            Write-Error "7-Zip did not produce $out"
-            exit 1
-          }
-
-          $sizeMB = [math]::Round((Get-Item $out).Length / 1MB, 2)
-          Write-Host "$cfg archive: $out ($sizeMB MB)"
-
-      # ── Upload build artifact ────────────────────────────────────────────────
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QEWide-Tweaks-${{ matrix.config }}
-          path: QEWide-Tweaks-${{ matrix.config }}.7z
+          name: ${{ env.PACKAGE_BASE }}-${{ matrix.config }}
+          path: ${{ env.PACKAGE_BASE }}-${{ matrix.config }}.7z
           retention-days: 30
-          if-no-files-found: error
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. Auto-tag + GitHub Release  (only on push to main/master, not on PRs)
+# 3. Create Automated Release
 # ══════════════════════════════════════════════════════════════════════════════
   release:
-    name: Create GitHub Release
+    name: GitHub Release
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write           # Needed to create tags & releases
+      contents: write
 
     steps:
-      # ── Checkout (needed for tag operations) ─────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── Generate a version tag from the current date + short SHA ─────────────
       - name: Generate version tag
         id: tag
         run: |
           TAG="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Generated tag: $TAG"
 
-      # ── Download both zips produced by the build job ──────────────────────────
-      - name: Download Debug artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: QEWide-Tweaks-Debug
           path: dist/
+          pattern: ${{ env.PACKAGE_BASE }}-*
+          merge-multiple: true
 
-      - name: Download Release artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: QEWide-Tweaks-Release
-          path: dist/
-
-      # ── List what we have before publishing ──────────────────────────────────
-      - name: List dist contents
-        run: ls -lh dist/
-
-      # ── Create tag + GitHub Release with both zips attached ───────────────────
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name:   ${{ steps.tag.outputs.tag }}
-          name:       "QEWide-Tweaks ${{ steps.tag.outputs.tag }}"
-          draft:      false
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "QEWide-Tweaks Build ${{ steps.tag.outputs.tag }}"
+          draft: false
           prerelease: false
           generate_release_notes: true
-          body: |
-            ## QEWide-Tweaks — Automated Build
-
-            | Build | Description |
-            |-------|-------------|
-            | **Release** | Optimized build — best performance, smallest size. Recommended for playing. |
-            | **Debug**   | Full debug symbols, no optimizations. Use for testing & crash analysis. |
-
-            Built from commit `${{ github.sha }}` on branch `${{ github.ref_name }}`.
           files: |
-            dist/QEWide-Tweaks-Debug.7z
-            dist/QEWide-Tweaks-Release.7z
+            dist/${{ env.PACKAGE_BASE }}-Debug.7z
+            dist/${{ env.PACKAGE_BASE }}-Release.7z

@@ -1,32 +1,41 @@
-# Prerequisites
-*.d
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
 
-# Compiled Object files
+# Build outputs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+*.tlog
+*.log
+*.pdb
+*.exe
+
+# IDE
+enc_temp_folder/
+*.vspscc
+.vs/
+
+# Misc
+*.d
 *.slo
 *.lo
 *.o
 *.obj
-
-# Fortran module files
 *.mod
 *.smod
 
-/.vs
-*.tlog
-*.log
-/SexyAppFramework/Debug
-Debug/LawnProject.pdb
-Debug/LawnProject.exe
-/.vs/PlantsVsZombies/v17
-.vs/PlantsVsZombies/v17/.suo
-.vs/PlantsVsZombies/v17/Browse.VC.db
-/enc_temp_folder
-/Debug/appdata
-/Debug/crash.txt
-/Debug/ddraw.dll
-/Debug/dxwrapper.dll
-/Debug/dxwrapper.ini
-/Debug/dxwrapper-lawnproject.log
-/Release/
-/SexyAppFramework/Release
+# Project specific
 /PopcapTools/projects.txt
+/SexyAppFramework/Debug
+/SexyAppFramework/Release

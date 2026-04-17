@@ -64,6 +64,8 @@ public:
 	// for animations
 	AnimInfo				*mAnimInfo;
 
+	bool					mIsScreenBuffer;
+
 public:
 	Image();
 	Image(const Image& theImage);

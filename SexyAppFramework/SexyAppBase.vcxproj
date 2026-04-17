@@ -63,6 +63,7 @@
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <UseFullPaths>true</UseFullPaths>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\SDL3-3.4.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_USE_WIDE_STRING;WIN_32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -73,7 +74,8 @@
     </Lib>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Winmm.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SDL3.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Winmm.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\SDL3-3.4.0\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>robocopy "$(SolutionDir)game_assets" "$(OutDir) " /E /XO /XD userdata cached /R:2 /W:5 &amp; IF %ERRORLEVEL% LSS 8 SET ERRORLEVEL=0</Command>
@@ -549,7 +551,6 @@
     </ClCompile>
     <ClCompile Include="MemoryImage.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="MiscBuildBase.cpp" />
     <ClCompile Include="ModVal.cpp">
@@ -607,6 +608,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="SDL3TextureManager.cpp" />
     <ClCompile Include="SEHCatcher.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
@@ -1031,6 +1033,7 @@
     <ClInclude Include="ScrollbarWidget.h" />
     <ClInclude Include="ScrollbuttonWidget.h" />
     <ClInclude Include="ScrollListener.h" />
+    <ClInclude Include="SDL3TextureManager.h" />
     <ClInclude Include="SEHCatcher.h" />
     <ClInclude Include="SexyApp.h" />
     <ClInclude Include="SexyAppBase.h" />
@@ -1076,6 +1079,9 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\DiscordRPC\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="Debug\SDL3TextureManager.obj" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

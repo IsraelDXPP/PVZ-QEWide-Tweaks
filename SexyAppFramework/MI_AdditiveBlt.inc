@@ -1,5 +1,5 @@
 {
-	ulong* aDestPixelsRow = ((ulong*) GetBits()) + (theY * mWidth) + theX;
+	ulong* aDestPixelsRow = ((ulong*) GET_DEST_BITS(this)) + (theY * mWidth) + theX;
 	SRC_TYPE* aSrcPixelsRow = aSrcBits + (theSrcRect.mY * theImage->mWidth) + theSrcRect.mX;
 
 	if (theColor == Color::White)

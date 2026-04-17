@@ -822,10 +822,10 @@ bool ResourceManager::DoLoadImage(ImageRes *theRes)
 
 		aDDImage->CommitBits();
 				
-		if (!aDDImage->mHasAlpha)
+		if (!aDDImage->mHasAlpha || mApp->Is3DAccelerated())
 		{
-			aDDImage->mWantDDSurface = true;
-			aDDImage->mPurgeBits = true;			
+			aDDImage->mWantDDSurface = mApp->Is3DAccelerated();
+			// aDDImage->mPurgeBits = true; // DISABLED: We need bits for the SDL3 hybrid compositor and software fallback
 		}
 
 		SEXY_PERF_END("ResourceManager:DDSurface");
@@ -834,10 +834,7 @@ bool ResourceManager::DoLoadImage(ImageRes *theRes)
 	if (theRes->mPalletize)
 	{
 		SEXY_PERF_BEGIN("ResourceManager:Palletize");
-		if (aDDImage->mSurface==NULL)
-			aDDImage->Palletize();
-		else
-			aDDImage->mWantPal = true;
+		aDDImage->Palletize();
 		SEXY_PERF_END("ResourceManager:Palletize");
 	}
 

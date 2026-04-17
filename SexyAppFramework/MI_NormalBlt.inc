@@ -1,5 +1,5 @@
 {
-	ulong* aDestPixelsRow = ((ulong*) GetBits()) + (theY * mWidth) + theX;	
+	ulong* aDestPixelsRow = ((ulong*) GET_DEST_BITS(this)) + (theY * mWidth) + theX;	
 
 	if ((mHasAlpha) || (mHasTrans) || (theColor != Color::White))
 	{

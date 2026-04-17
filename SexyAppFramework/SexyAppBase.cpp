@@ -3,6 +3,8 @@
 //#define SEXY_MEMTRACE
 
 #include "SexyAppBase.h"
+#define SDL_DISABLE_OLD_NAMES
+#include <SDL3/SDL.h>
 #include "SEHCatcher.h"
 #include "WidgetManager.h"
 #include "Widget.h"
@@ -40,6 +42,12 @@
 #include <shlobj.h>
 #include "../GameConstants.h"
 #include "../Sexy.TodLib/TodStringFile.h"
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_system.h>
+#include "SDL3TextureManager.h"
+#include <thread>
+
 
 #include "memmgr.h"
 #include "../Resources.h"
@@ -506,6 +514,20 @@ SexyAppBase::~SexyAppBase()
 
 	if (mMutex != NULL)
 		::CloseHandle(mMutex);
+
+	if (LawnApp::mSDLRenderer)
+	{
+		SDL_DestroyRenderer(LawnApp::mSDLRenderer);
+		LawnApp::mSDLRenderer = NULL;
+	}
+
+	if (LawnApp::mSDLWindow)
+	{
+		SDL_DestroyWindow(LawnApp::mSDLWindow);
+		LawnApp::mSDLWindow = NULL;
+	}
+
+	SDL_Quit();
 
 	FreeLibrary(gDDrawDLL);
 	FreeLibrary(gDSoundDLL);
@@ -1209,32 +1231,34 @@ void WriteScreenShotThread(void* theArg)
 
 void SexyAppBase::TakeScreenshot()
 {
-	if (mDDInterface == NULL || mDDInterface->mDrawSurface == NULL)
-		return;
+	std::string anImageDir = GetAppDataFolder() + "screenshots\\";
+	_mkdir(anImageDir.c_str());
 
-	// Capture screen
-	LPDIRECTDRAWSURFACE aSurface = mDDInterface->mDrawSurface;
+	std::string anImagePrefix = "screenshot_";
+	int aMaxId = -1;
 
-	// Temporarily set the mDrawSurface to NULL so DDImage::Check3D 
-	// returns false so we can lock the surface.
-	mDDInterface->mDrawSurface = NULL;
-
-	DDImage* anImage = new DDImage(mDDInterface);
-	anImage->SetSurface(aSurface);
-	anImage->GetBits();
-	anImage->DeleteDDSurface();
-	mDDInterface->mDrawSurface = aSurface;
-
-	if (anImage->mBits == NULL)
+	// Use STL to find the max screenshot ID
+	WIN32_FIND_DATA aFindData;
+	HANDLE hFind = FindFirstFile((anImageDir + anImagePrefix + "*.png").c_str(), &aFindData);
+	if (hFind != INVALID_HANDLE_VALUE)
 	{
-		delete anImage;
-		return;
+		do {
+			int anId = atoi(aFindData.cFileName + anImagePrefix.length());
+			if (anId > aMaxId) aMaxId = anId;
+		} while (FindNextFile(hFind, &aFindData));
+		FindClose(hFind);
 	}
 
-	_beginthread(WriteScreenShotThread, 0, anImage);
+	SexyString anImageName = anImageDir + anImagePrefix + StrFormat("%d.png", aMaxId + 1).c_str();
 
-	//	ClearUpdateBacklog();
+	SDL_Surface* surface = SDL_RenderReadPixels(LawnApp::mSDLRenderer, NULL);
+	if (!surface) return;
+	std::thread([surface, anImageName]() {
+		SDL_SavePNG(surface, anImageName.c_str());
+		SDL_DestroySurface(surface);
+	}).detach();
 }
+
 
 void SexyAppBase::DumpProgramInfo()
 {
@@ -1290,8 +1314,6 @@ void SexyAppBase::DumpProgramInfo()
 		int aMemorySize = 0;
 		if (aMemoryImage->mBits != NULL)
 			aBitsMemory = aNumPixels * 4;
-		if ((aDDImage != NULL) && (aDDImage->mSurface != NULL))
-			aSurfaceMemory = aNumPixels * 4; // Assume 32bit screen...
 		if (aMemoryImage->mColorTable != NULL)
 			aPalletizedMemory = aNumPixels + 256 * 4;
 		if (aMemoryImage->mNativeAlphaData != NULL)
@@ -1360,8 +1382,6 @@ void SexyAppBase::DumpProgramInfo()
 
 		if (aMemoryImage->mBits != NULL)
 			aBitsMemory = aNumPixels * 4;
-		if ((aDDImage != NULL) && (aDDImage->mSurface != NULL))
-			aSurfaceMemory = aNumPixels * 4; // Assume 32bit screen...
 		if (aMemoryImage->mColorTable != NULL)
 			aPalletizedMemory = aNumPixels + 256 * 4;
 		if (aMemoryImage->mNativeAlphaData != NULL)
@@ -2209,11 +2229,6 @@ void SexyAppBase::Shutdown()
 		if (mMusicInterface != NULL)
 			mMusicInterface->StopAllMusic();
 
-		if ((!mIsPhysWindowed) && (mDDInterface != NULL) && (mDDInterface->mDD != NULL))
-		{
-			mDDInterface->mDD->RestoreDisplayMode();
-		}
-
 		if (mHWnd != NULL)
 		{
 			ShowWindow(mHWnd, SW_HIDE);
@@ -2225,6 +2240,10 @@ void SexyAppBase::Shutdown()
 			WriteToRegistry();
 
 		ImageLib::CloseJPEG2000();
+
+		SDL_DestroyRenderer(LawnApp::mSDLRenderer);
+		SDL_DestroyWindow(LawnApp::mSDLWindow);
+		SDL_Quit();
 	}
 }
 
@@ -2325,85 +2344,45 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 {
 	SEXY_AUTO_PERF("SexyAppBase::Redraw");
 
-	// Do mIsDrawing check because we could enter here at a bad time if any windows messages
-	//  are processed during WidgetManager->Draw
-	if ((mIsDrawing) || (mShutdown))
+	if (mShutdown || !LawnApp::mSDLRenderer || !LawnApp::mSDLWindow)
 		return;
 
-	if (gScreenSaverActive)
+	// Ensure the screen image exists and widgets have a valid render target
+	Image* aScreenImage = mDDInterface->GetScreenImage();
+	if (aScreenImage == nullptr)
 		return;
 
-	static DWORD aRetryTick = 0;
-	if (!mDDInterface->Redraw(theClipRect))
+	MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(aScreenImage);
+	if (aMemImage == nullptr)
+		return;
+
+	if (mWidgetManager->mImage != aScreenImage)
+		mWidgetManager->mImage = aMemImage;
+
+	// Fallback/Update Screen Surface Sync
+	// In hardware mode, the render happens independently during each graphic Draw call.
+	// In software mode, mBits contains the whole CPU composite memory, so we upload it.
+	if (Is3DAccelerated())
 	{
-		extern bool gD3DInterfacePreDrawError;
-		gD3DInterfacePreDrawError = false; // this predraw error happens naturally when ddraw is failing
-		if (!gIsFailing)
-		{
-			//gDebugStream << GetTickCount() << " Redraw failed!" << std::endl;
-			gIsFailing = true;
-		}
-
-		WINDOWPLACEMENT aWindowPlacement;
-		ZeroMemory(&aWindowPlacement, sizeof(aWindowPlacement));
-		aWindowPlacement.length = sizeof(aWindowPlacement);
-		::GetWindowPlacement(mHWnd, &aWindowPlacement);
-
-		DWORD aTick = GetTickCount();
-		if ((mActive || (aTick - aRetryTick > 1000 && mIsPhysWindowed)) && (aWindowPlacement.showCmd != SW_SHOWMINIMIZED) && (!mMinimized))
-		{
-			aRetryTick = aTick;
-
-			mWidgetManager->mImage = NULL;
-
-			int aResult = InitDDInterface();
-
-			//gDebugStream << GetTickCount() << " ReInit..." << std::endl;
-
-			if ((mIsWindowed) && (aResult == DDInterface::RESULT_INVALID_COLORDEPTH))
-			{
-				//gDebugStream << GetTickCount() << "ReInit Invalid Colordepth" << std::endl;
-				if (!mActive) // don't switch to full screen if not active app
-					return;
-
-				SwitchScreenMode(false);
-				mForceFullscreen = true;
-				return;
-			}
-			else if (aResult == DDInterface::RESULT_3D_FAIL)
-			{
-				Set3DAcclerated(false);
-				return;
-			}
-			else if (aResult != DDInterface::RESULT_OK)
-			{
-				//gDebugStream << GetTickCount() << " ReInit Failed" << std::endl;
-				//Fail("Failed to initialize DirectDraw");
-				//Sleep(1000);				
-
-				return;
-			}
-
-			ReInitImages();
-
-			mWidgetManager->mImage = mDDInterface->GetScreenImage();
-			mWidgetManager->MarkAllDirty();
-
-			mLastTime = timeGetTime();
-		}
+		SDL3TextureManager::Instance().EndFrame();
 	}
 	else
 	{
-		if (gIsFailing)
-		{
-			//gDebugStream << GetTickCount() << " Redraw succeeded" << std::endl;
-			gIsFailing = false;
-			aRetryTick = 0;
-		}
+		// Force-allocate mBits so games that query GetBits() don't crash
+		if (aMemImage->GetBits() == nullptr)
+			return;
+
+		SDL3TextureManager::Instance().FlushFrame(
+			aMemImage->GetBits(), 
+			aMemImage->GetWidth(), 
+			aMemImage->GetHeight()
+		);
 	}
 
-	mFPSFlipCount++;
+	mWidgetManager->mDirty = false;
+	mFPSDirtyCount = 0;
 }
+
 
 ///////////////////////////// FPS Stuff
 static PerfTimer gFPSTimer;
@@ -2422,8 +2401,6 @@ static void CalculateFPS()
 		gFPSImage->SetImageMode(false, false);
 		gFPSImage->SetVolatile(true);
 		gFPSImage->mPurgeBits = false;
-		gFPSImage->mWantDDSurface = true;
-		gFPSImage->PurgeBits();
 	}
 
 	if (gFPSTimer.GetDuration() >= 1000 || gForceDisplay)
@@ -2464,8 +2441,6 @@ static void FPSDrawCoords(int theX, int theY)
 		gFPSImage->SetImageMode(false, false);
 		gFPSImage->SetVolatile(true);
 		gFPSImage->mPurgeBits = false;
-		gFPSImage->mWantDDSurface = true;
-		gFPSImage->PurgeBits();
 	}
 
 	Graphics aDrawG(gFPSImage);
@@ -2492,8 +2467,6 @@ static void CalculateDemoTimeLeft()
 		gDemoTimeLeftImage->SetImageMode(false, false);
 		gDemoTimeLeftImage->SetVolatile(true);
 		gDemoTimeLeftImage->mPurgeBits = false;
-		gDemoTimeLeftImage->mWantDDSurface = true;
-		gDemoTimeLeftImage->PurgeBits();
 	}
 
 	DWORD aTick = GetTickCount();
@@ -2630,34 +2603,90 @@ bool SexyAppBase::DrawDirtyStuff()
 		return false;
 	}
 
+	if (mDDInterface->mScreenImage != NULL)
+	{
+		static int aLastWidth = 0;
+		static int aLastHeight = 0;
+
+		// 1. PRE-FLIGHT: Deterministic allocation/resize
+		if (mWidth != aLastWidth || mHeight != aLastHeight)
+		{
+			void* aOldPtr = mDDInterface->mScreenImage->GetBits();
+			mDDInterface->mScreenImage->Create(mWidth, mHeight);
+			mDDInterface->mScreenImage->mIsScreenBuffer = true;
+			
+			aLastWidth = mWidth;
+			aLastHeight = mHeight;
+
+			TodTrace("[RESIZE] Recreated screen buffer: %dx%d (old p:%p -> new p:%p)", aLastWidth, aLastHeight, aOldPtr, mDDInterface->mScreenImage->GetBits());
+		}
+		
+		if (mDDInterface->mScreenImage->mBits == NULL)
+		{
+			TodTrace("[PREFLIGHT] Explicitly allocating screen buffer bits before render starts.");
+			mDDInterface->mScreenImage->Create(mWidth, mHeight);
+			mDDInterface->mScreenImage->mIsScreenBuffer = true;
+		}
+
+		// 2. SNAPSHOT: Capture the stable source of truth for THIS frame
+		MemoryImage::gLastValidScreenBits = mDDInterface->mScreenImage->mBits;
+
+		// CRITICAL: Verify the buffer is valid before proceeding
+		if (mDDInterface->mScreenImage->mBits == NULL)
+		{
+			return false;
+		}
+
+		mWidgetManager->mImage = mDDInterface->mScreenImage;
+		mWidgetManager->mWidth = mWidth;
+		mWidgetManager->mHeight = mHeight;
+	}
+
+	// 3. START RENDER: Begin GPU command queue for this frame
 	mIsDrawing = true;
+
+	// 3. START RENDER: All drawing happens in software via MemoryImage
+	// and is stored in mDDInterface->mScreenImage->mBits.
+	mIsDrawing = true;
+
+	// Clear the CPU screen buffer at the start of every frame so software-rendered
+	// content never accumulates across frames (ghosting fix).
+	if (mDDInterface->mScreenImage && mDDInterface->mScreenImage->mBits)
+	{
+		memset(mDDInterface->mScreenImage->mBits, 0,
+			mDDInterface->mScreenImage->mWidth * mDDInterface->mScreenImage->mHeight * sizeof(ulong));
+		mDDInterface->mScreenImage->mBitsChangedCount++;
+	}
+
 	bool drewScreen = mWidgetManager->DrawScreen();
 	mIsDrawing = false;
 
-	if ((drewScreen || (aStartTime - mLastDrawTick >= 1000) || (mCustomCursorDirty)) &&
-		((int)(aStartTime - mNextDrawTick) >= 0))
+	// Always redraw every frame through SDL - don't gate on drewScreen
 	{
-		mLastDrawWasEmpty = false;
+		mLastDrawWasEmpty = !drewScreen;
 
-		mDrawCount++;
+		if (drewScreen)
+			mDrawCount++;
 
 		DWORD aMidTime = timeGetTime();
 
 		mFPSCount++;
 		mFPSTime += aMidTime - aStartTime;
 
-		mDrawTime += aMidTime - aStartTime;
+		if (drewScreen)
+			mDrawTime += aMidTime - aStartTime;
 
-		if (mShowFPS)
+		if (mShowFPS && drewScreen)
 		{
 			Graphics g(mDDInterface->GetScreenImage());
-			g.DrawImage(gFPSImage, mWidth - gFPSImage->GetWidth() - 10, mHeight - gFPSImage->GetHeight() - 10);
+			if (gFPSImage)
+				g.DrawImage(gFPSImage, mWidth - gFPSImage->GetWidth() - 10, mHeight - gFPSImage->GetHeight() - 10);
 
-			if (mPlayingDemoBuffer)
+			if (mPlayingDemoBuffer && gDemoTimeLeftImage)
 				g.DrawImage(gDemoTimeLeftImage, mWidth - gDemoTimeLeftImage->GetWidth() - 10, mHeight - gFPSImage->GetHeight() - gDemoTimeLeftImage->GetHeight() - 15);
 		}
 
-		if (mWaitForVSync && mIsPhysWindowed && mSoftVSyncWait)
+		if (mWaitForVSync && mIsPhysWindowed && mSoftVSyncWait && drewScreen)
 		{
 			DWORD aTick = timeGetTime();
 			if (aTick - mLastDrawTick < mDDInterface->mMillisecondsPerFrame)
@@ -2712,13 +2741,7 @@ bool SexyAppBase::DrawDirtyStuff()
 		mHasPendingDraw = false;
 		mCustomCursorDirty = false;
 
-		return true;
-	}
-	else
-	{
-		mHasPendingDraw = false;
-		mLastDrawWasEmpty = true;
-		return false;
+		return drewScreen;
 	}
 }
 
@@ -2740,14 +2763,7 @@ void SexyAppBase::LogScreenSaverError(const std::string& theError)
 
 void SexyAppBase::BeginPopup()
 {
-	if (!mIsPhysWindowed)
-	{
-		if (mDDInterface && mDDInterface->mDD)
-		{
-			mDDInterface->mDD->FlipToGDISurface();
-			mNoDefer = true;
-		}
-	}
+	mNoDefer = true;
 }
 
 void SexyAppBase::EndPopup()
@@ -2767,8 +2783,6 @@ void SexyAppBase::EndPopup()
 
 int SexyAppBase::MsgBox(const std::string& theText, const std::string& theTitle, int theFlags)
 {
-	//	if (mDDInterface && mDDInterface->mDD)
-	//		mDDInterface->mDD->FlipToGDISurface();
 	if (IsScreenSaver())
 	{
 		LogScreenSaverError(theText);
@@ -2784,8 +2798,6 @@ int SexyAppBase::MsgBox(const std::string& theText, const std::string& theTitle,
 
 int SexyAppBase::MsgBox(const std::wstring& theText, const std::wstring& theTitle, int theFlags)
 {
-	//	if (mDDInterface && mDDInterface->mDD)
-	//		mDDInterface->mDD->FlipToGDISurface();
 	if (IsScreenSaver())
 	{
 		LogScreenSaverError(WStringToString(theText));
@@ -3332,9 +3344,8 @@ static bool ScreenSaverWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 
 	if (aPasswordFunc && gSexyAppBase != NULL && gSexyAppBase->mInitialized) // need to verify password before closing
 	{
-		if (gSexyAppBase != NULL && gSexyAppBase->mDDInterface != NULL && gSexyAppBase->mDDInterface->mDD != NULL)
+		if (gSexyAppBase != NULL && gSexyAppBase->mDDInterface != NULL)
 		{
-			gSexyAppBase->mDDInterface->mDD->FlipToGDISurface();	// so we can see the password dialog
 			gSexyAppBase->mNoDefer = true;							// so the app doesn't draw over the password dialog
 		}
 
@@ -4152,66 +4163,13 @@ void SexyAppBase::ProcessDemo()
 
 void SexyAppBase::ShowMemoryUsage()
 {
-	DWORD aTotal = 0;
-	DWORD aFree = 0;
+	if (LawnApp::mSDLRenderer == NULL)
+		return;
 
-	if (mDDInterface->mDD7 != NULL)
-	{
-		DDSCAPS2 aCaps;
-		ZeroMemory(&aCaps, sizeof(aCaps));
-		aCaps.dwCaps = DDSCAPS_VIDEOMEMORY;
-		mDDInterface->mDD7->GetAvailableVidMem(&aCaps, &aTotal, &aFree);
-	}
+	std::string aStr = "--- Display Info ---\n\n";
+	aStr += StrFormat("Renderer: %s\n\n", SDL_GetRendererName(LawnApp::mSDLRenderer));
 
-	MemoryImageSet::iterator anItr = mMemoryImageSet.begin();
-	typedef std::pair<int, int> FormatUsage;
-	typedef std::map<PixelFormat, FormatUsage> FormatMap;
-	FormatMap aFormatMap;
-	int aTextureMemory = 0;
-	while (anItr != mMemoryImageSet.end())
-	{
-		MemoryImage* aMemoryImage = *anItr;
-		if (aMemoryImage->mD3DData != NULL)
-		{
-			TextureData* aData = (TextureData*)aMemoryImage->mD3DData;
-			aTextureMemory += aData->mTexMemSize;
-
-			FormatUsage& aUsage = aFormatMap[aData->mPixelFormat];
-			aUsage.first++;
-			aUsage.second += aData->mTexMemSize;
-		}
-
-		++anItr;
-	}
-
-	std::string aStr;
-
-	const char* aDesc;
-	if (Is3DAccelerationRecommended())
-		aDesc = "Recommended";
-	else if (Is3DAccelerationSupported())
-		aDesc = "Supported";
-	else
-		aDesc = "Unsupported";
-
-	aStr += StrFormat("3D-Mode is %s (3D is %s on this system)\r\n\r\n", Is3DAccelerated() ? "On" : "Off", aDesc);
-
-	aStr += StrFormat("Num Images: %d\r\n", (int)mMemoryImageSet.size());
-	aStr += StrFormat("Num Sounds: %d\r\n", mSoundManager->GetNumSounds());
-	aStr += StrFormat("Video Memory: %s/%s KB\r\n", SexyStringToString(CommaSeperate((aTotal - aFree) / 1024)).c_str(), SexyStringToString(CommaSeperate(aTotal / 1024)).c_str());
-	aStr += StrFormat("Texture Memory: %s KB\r\n", CommaSeperate(aTextureMemory / 1024).c_str());
-
-	FormatUsage aUsage = aFormatMap[PixelFormat_A8R8G8B8];
-	aStr += StrFormat("A8R8G8B8: %d - %s KB\r\n", aUsage.first, SexyStringToString(CommaSeperate(aUsage.second / 1024)).c_str());
-	aUsage = aFormatMap[PixelFormat_A4R4G4B4];
-	aStr += StrFormat("A4R4G4B4: %d - %s KB\r\n", aUsage.first, SexyStringToString(CommaSeperate(aUsage.second / 1024)).c_str());
-	aUsage = aFormatMap[PixelFormat_R5G6B5];
-	aStr += StrFormat("R5G6B5: %d - %s KB\r\n", aUsage.first, SexyStringToString(CommaSeperate(aUsage.second / 1024)).c_str());
-	aUsage = aFormatMap[PixelFormat_Palette8];
-	aStr += StrFormat("Palette8: %d - %s KB\r\n", aUsage.first, SexyStringToString(CommaSeperate(aUsage.second / 1024)).c_str());
-
-	MsgBox(aStr, "Video Stats", MB_OK);
-	mLastTime = timeGetTime();
+	MsgBox(aStr, "Information", MB_OK | MB_ICONINFORMATION);
 }
 
 bool SexyAppBase::IsAltKeyUsed(WPARAM wParam)
@@ -5211,7 +5169,8 @@ void SexyAppBase::SwitchScreenMode(bool wantWindowed, bool is3d, bool force)
 
 	mIsWindowed = wantWindowed;
 
-	MakeWindow();
+	// MakeWindow();
+	InitDDInterface();
 
 	// We need to do this check to allow IE to get focus instead of
 	//  stealing it away for ourselves
@@ -5636,6 +5595,11 @@ bool SexyAppBase::Process(bool allowSleep)
 					aCumSleepTime += aTimeToNextFrame;
 				}
 			}
+
+			// RESOURCE BARRIER: Atomically swap framebuffer if a change was requested during the last cycle.
+			// This is safe because DrawDirtyStuff has returned and the call stack is clear.
+			if (mDDInterface != NULL)
+				mDDInterface->SyncScreenImage();
 		}
 
 		if (mYieldMainThread)
@@ -5722,11 +5686,84 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 	//  condition has already been met by processing windows messages		
 	if (mUpdateAppState == UPDATESTATE_MESSAGES)
 	{
-		MSG msg;
-		while ((PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) && (!mShutdown))
+		SDL_Event event;
+		while (SDL_PollEvent(&event))
 		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
+			switch (event.type)
+			{
+			case SDL_EVENT_QUIT:
+				mShutdown = true;
+				break;
+			case SDL_EVENT_MOUSE_MOTION:
+				mWidgetManager->MouseMove((int)event.motion.x, (int)event.motion.y);
+				break;
+			case SDL_EVENT_MOUSE_BUTTON_DOWN:
+			case SDL_EVENT_MOUSE_BUTTON_UP:
+			{
+				int aBtn = 0;
+				if (event.button.button == SDL_BUTTON_LEFT) aBtn = 1;
+				else if (event.button.button == SDL_BUTTON_RIGHT) aBtn = -1;
+				
+				if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+					mWidgetManager->MouseDown((int)event.button.x, (int)event.button.y, aBtn);
+				else
+					mWidgetManager->MouseUp((int)event.button.x, (int)event.button.y, aBtn);
+				break;
+			}
+			case SDL_EVENT_KEY_DOWN:
+			case SDL_EVENT_KEY_UP:
+			{
+				bool isDown = (event.type == SDL_EVENT_KEY_DOWN);
+				SDL_Keycode sdlKey = event.key.key;
+				KeyCode aKey = KEYCODE_UNKNOWN;
+
+				if (sdlKey >= SDLK_A && sdlKey <= SDLK_Z) aKey = (KeyCode)(0x41 + (sdlKey - SDLK_A));
+				else if (sdlKey >= SDLK_0 && sdlKey <= SDLK_9) aKey = (KeyCode)(0x30 + (sdlKey - SDLK_0));
+				else if (sdlKey >= SDLK_KP_0 && sdlKey <= SDLK_KP_9) aKey = (KeyCode)(0x60 + (sdlKey - SDLK_KP_0));
+				else
+				{
+					switch (sdlKey)
+					{
+					case SDLK_UP:		aKey = KEYCODE_UP; break;
+					case SDLK_DOWN:		aKey = KEYCODE_DOWN; break;
+					case SDLK_LEFT:		aKey = KEYCODE_LEFT; break;
+					case SDLK_RIGHT:	aKey = KEYCODE_RIGHT; break;
+					case SDLK_RETURN:	aKey = KEYCODE_RETURN; break;
+					case SDLK_ESCAPE:	aKey = KEYCODE_ESCAPE; break;
+					case SDLK_SPACE:	aKey = KEYCODE_SPACE; break;
+					case SDLK_BACKSPACE:aKey = KEYCODE_BACK; break;
+					case SDLK_TAB:		aKey = KEYCODE_TAB; break;
+					case SDLK_LSHIFT:
+					case SDLK_RSHIFT:	aKey = KEYCODE_SHIFT; break;
+					case SDLK_LCTRL:
+					case SDLK_RCTRL:	aKey = KEYCODE_CONTROL; break;
+					case SDLK_LALT:
+					case SDLK_RALT:		aKey = KEYCODE_MENU; break;
+					}
+				}
+
+				if (aKey != KEYCODE_UNKNOWN)
+				{
+					if (isDown) mWidgetManager->KeyDown(aKey);
+					else mWidgetManager->KeyUp(aKey);
+				}
+				break;
+			}
+			case SDL_EVENT_TEXT_INPUT:
+			{
+				for (int i = 0; event.text.text[i] != '\0'; ++i)
+					mWidgetManager->KeyChar((SexyChar)event.text.text[i]);
+				break;
+			}
+			case SDL_EVENT_WINDOW_FOCUS_GAINED:
+				mWidgetManager->GotFocus();
+				break;
+			case SDL_EVENT_WINDOW_FOCUS_LOST:
+				mWidgetManager->LostFocus();
+				break;
+			}
+
+			if (mShutdown) break;
 		}
 
 		ProcessDemo();
@@ -5776,6 +5813,8 @@ bool SexyAppBase::UpdateApp()
 			return false;
 		if (updated)
 			return true;
+		
+		SDL_Delay(1);
 	}
 }
 
@@ -5783,19 +5822,86 @@ int SexyAppBase::InitDDInterface()
 {
 	PreDDInterfaceInitHook();
 	DeleteNativeImageData();
-	int aResult = mDDInterface->Init(mHWnd, mIsPhysWindowed);
-	DemoSyncRefreshRate();
-	if (DDInterface::RESULT_OK == aResult)
+
+	if (mDDInterface == NULL)
 	{
-		mScreenBounds.mX = (mWidth - mDDInterface->mWidth) / 2;
-		mScreenBounds.mY = (mHeight - mDDInterface->mHeight) / 2;
-		mScreenBounds.mWidth = mDDInterface->mWidth;
-		mScreenBounds.mHeight = mDDInterface->mHeight;
-		mWidgetManager->Resize(mScreenBounds, mDDInterface->mPresentationRect);
-		PostDDInterfaceInitHook();
+		mDDInterface = new DDInterface(this);
 	}
-	return aResult;
+
+	if (!LawnApp::mSDLWindow)
+	{
+		LawnApp::mSDLWindow = SDL_CreateWindow(SexyStringToString(mTitle).c_str(), mWidth, mHeight, 0);
+	}
+
+	if (!LawnApp::mSDLRenderer)
+	{
+		SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
+		LawnApp::mSDLRenderer = SDL_CreateRenderer(LawnApp::mSDLWindow, NULL);
+		
+		if (LawnApp::mSDLRenderer)
+		{
+			const char* aDriver = SDL_GetRendererName(LawnApp::mSDLRenderer);
+			char aBuf[256];
+			sprintf(aBuf, "[SDL3] Renderer: %s | VSync: ON\n", aDriver ? aDriver : "Unknown");
+			OutputDebugStringA(aBuf);
+
+			SDL3TextureManager::Instance().SetRenderer(LawnApp::mSDLRenderer);
+			
+			// Set logical presentation to handle aspect ratio automatically
+			SDL_SetRenderLogicalPresentation(LawnApp::mSDLRenderer, mWidth, mHeight,
+				SDL_LOGICAL_PRESENTATION_LETTERBOX);
+		}
+	}
+
+	if (!LawnApp::mSDLWindow || !LawnApp::mSDLRenderer)
+	{
+		Popup("Failed to create SDL3 Window or Renderer");
+		return DDInterface::RESULT_FAIL;
+	}
+
+	SDL_StartTextInput(LawnApp::mSDLWindow);
+
+	// Unify handles: Map SDL3 window HWND to SexyAppFramework mHWnd
+	mHWnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(LawnApp::mSDLWindow), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+
+	// Force creation of a screen image if not exists
+	if (mDDInterface->mScreenImage == NULL)
+	{
+		DDImage* aScreenImage = new DDImage(mDDInterface);
+		aScreenImage->mWidth = mWidth;
+		aScreenImage->mHeight = mHeight;
+		aScreenImage->mHasAlpha = false;
+		aScreenImage->mDrawToBits = !Is3DAccelerated();  // Let it use Software composite OR native hardware
+		aScreenImage->mApp = this;         // Ensure mApp is valid for MemoryImage ops
+
+		// Initialize with current dimensions immediately
+		aScreenImage->Create(mWidth, mHeight);
+		aScreenImage->mWantDDSurface = Is3DAccelerated();
+
+		mDDInterface->mScreenImage = aScreenImage;
+		mDDInterface->mInitialized = true;
+	}
+	else
+	{
+		// Ensure existing screen image respects rendering state
+		mDDInterface->mScreenImage->mDrawToBits = !Is3DAccelerated();
+		mDDInterface->mScreenImage->mWantDDSurface = Is3DAccelerated();
+	}
+
+	// ALWAYS explicitly track current screen rendering target frame
+	SDL3TextureManager::Instance().SetRenderTarget(mDDInterface->mScreenImage);
+	mWidgetManager->mImage = mDDInterface->mScreenImage;
+
+	mScreenBounds.mX = 0;
+	mScreenBounds.mY = 0;
+	mScreenBounds.mWidth = mWidth;
+	mScreenBounds.mHeight = mHeight;
+	mWidgetManager->Resize(mScreenBounds, mScreenBounds);
+	PostDDInterfaceInitHook();
+
+	return DDInterface::RESULT_OK;
 }
+
 
 void SexyAppBase::PreTerminate()
 {
@@ -5811,8 +5917,8 @@ void SexyAppBase::Start()
 	if (mAutoStartLoadingThread)
 		StartLoadingThread();
 
-	::ShowWindow(mHWnd, SW_SHOW);
-	::SetFocus(mHWnd);
+	// ::ShowWindow(mHWnd, SW_SHOW); // Disabled for SDL3
+	// ::SetFocus(mHWnd); // Disabled for SDL3
 
 	timeBeginPeriod(1);
 
@@ -6244,6 +6350,11 @@ void SexyAppBase::InitHook()
 
 void SexyAppBase::Init()
 {
+	if (mDDInterface == NULL)
+	{
+		mDDInterface = new DDInterface(this);
+	}
+
 	mPrimaryThreadId = GetCurrentThreadId();
 
 	if (mShutdown)
@@ -6292,6 +6403,12 @@ void SexyAppBase::Init()
 
 	if (gHInstance == NULL)
 		gHInstance = (HINSTANCE)GetModuleHandle(NULL);
+
+	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+	{
+		Popup("SDL_Init Failed");
+		DoExit(0);
+	}
 
 	// Change directory
 	if (!ChangeDirHook(mChangeDirTo.c_str()))
@@ -6468,7 +6585,8 @@ void SexyAppBase::Init()
 		}
 	}
 
-	MakeWindow();
+	// MakeWindow();
+	InitDDInterface();
 
 	if (mPlayingDemoBuffer)
 	{
@@ -6608,6 +6726,7 @@ Sexy::DDImage* SexyAppBase::GetImage(const std::string& theFileName, bool commit
 	anImage->mFilePath = theFileName;
 	anImage->SetBits(aLoadedImage->GetBits(), aLoadedImage->GetWidth(), aLoadedImage->GetHeight(), commitBits);
 	anImage->mFilePath = theFileName;
+	anImage->mWantDDSurface = Is3DAccelerated(); // Enable GPU surface for loaded assets
 	delete aLoadedImage;
 
 	return anImage;

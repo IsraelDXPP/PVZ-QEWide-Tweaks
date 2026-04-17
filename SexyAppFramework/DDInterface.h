@@ -7,7 +7,9 @@
 #include "Rect.h"
 #include "Ratio.h"
 
-#include <ddraw.h>
+struct SDL_Window;
+struct SDL_Renderer;
+struct SDL_Texture;
 
 namespace Sexy
 {
@@ -43,11 +45,6 @@ public:
 
 	CritSect				mCritSect;
 	bool					mInRedraw;
-	LPDIRECTDRAW			mDD;
-	LPDIRECTDRAW7			mDD7;
-	LPDIRECTDRAWSURFACE		mPrimarySurface;
-	LPDIRECTDRAWSURFACE		mSecondarySurface;
-	LPDIRECTDRAWSURFACE		mDrawSurface;
 	int						mWidth;
 	int						mHeight;
 	Ratio					mAspect;
@@ -60,6 +57,10 @@ public:
 	Ratio					mDisplayAspect;
 	bool					mAspectCorrect;
 	bool					mAspectNoStretch;
+
+	SDL_Texture*			mScreenTex;
+	int						mLastTexW;
+	int						mLastTexH;
 
 	Rect					mPresentationRect;
 	int						mFullscreenBits;
@@ -79,6 +80,8 @@ public:
 	HWND					mHWnd;
 	bool					mIsWindowed;
 	DDImage*				mScreenImage;
+	DDImage*				mPendingScreenImage;
+	bool					mHasPendingScreenSwap;
 	DDImageSet				mDDImageSet;
 	bool					mVideoOnlyDraw;
 	ulong					mInitCount;
@@ -91,29 +94,18 @@ public:
 	int						mCursorY;
 	Image*					mCursorImage;
 	bool					mHasOldCursorArea;	
-	LPDIRECTDRAWSURFACE		mOldCursorArea;
-	LPDIRECTDRAWSURFACE		mNewCursorArea;	
-	DDImage*				mOldCursorAreaImage;
-	DDImage*				mNewCursorAreaImage;	
+	Image*					mOldCursorAreaImage;
+	Image*					mNewCursorAreaImage;	
 
 	std::string				mErrorString;
 
 public:
-	bool					CopyBitmap(LPDIRECTDRAWSURFACE theSurface, HBITMAP TheBitmap, int theX, int theY, int theWidth, int theHeight);
 	ulong					GetColorRef(ulong theRGB);
 	void					AddDDImage(DDImage* theDDImage);
 	void					RemoveDDImage(DDImage* theDDImage);
 	void					Remove3DData(MemoryImage* theImage); // for 3d texture cleanup
 
 	void					Cleanup();
-	bool					GotDXError(HRESULT theResult, const char *theContext = "");
-
-	void					RestoreOldCursorAreaFrom(LPDIRECTDRAWSURFACE theSurface, bool adjust);
-	void					DrawCursorTo(LPDIRECTDRAWSURFACE theSurface, bool adjust);
-	void					MoveCursorTo(LPDIRECTDRAWSURFACE theSurface, bool adjust, int theNewCursorX, int theNewCursorY);
-
-	HRESULT					CreateSurface(DDSURFACEDESC2 *theDesc, LPDIRECTDRAWSURFACE *theSurface, void*);
-	void					ClearSurface(LPDIRECTDRAWSURFACE theSurface);
 	bool					Do3DTest(HWND theHWND);
 
 public:
@@ -124,6 +116,7 @@ public:
 
 	DDImage*				GetScreenImage();
 	int						Init(HWND theWindow, bool IsWindowed);	
+	void					SyncScreenImage();	
 	bool					Redraw(Rect* theClipRect = NULL);	
 	void					SetVideoOnlyDraw(bool videoOnly);
 	void					RemapMouse(int& theX, int& theY);

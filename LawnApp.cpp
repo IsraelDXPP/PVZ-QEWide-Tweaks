@@ -1,5 +1,7 @@
 #include <time.h>
 #include "LawnApp.h"
+#include <SDL3/SDL.h>
+
 #include "Lawn/Board.h"
 #include "Lawn/Plant.h"
 #include "Lawn/Zombie.h"
@@ -60,6 +62,9 @@ bool gSlowMo = false;
 bool gFastMo = false;  
 LawnApp* gLawnApp = nullptr;  
 int gSlowMoCounter = 0;  
+SDL_Window* LawnApp::mSDLWindow = nullptr;
+SDL_Renderer* LawnApp::mSDLRenderer = nullptr;
+
 
 const char* CLIENT_ID = "1261368391885787348";
 

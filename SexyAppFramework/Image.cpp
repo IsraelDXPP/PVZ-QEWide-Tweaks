@@ -14,6 +14,7 @@ Image::Image()
 
 	mAnimInfo = NULL;
 	mDrawn = false;
+	mIsScreenBuffer = false;
 }
 
 Image::Image(const Image& theImage) :
@@ -24,6 +25,7 @@ Image::Image(const Image& theImage) :
 	mNumTotal(theImage.mNumTotal)
 {
 	mDrawn = false;
+	mIsScreenBuffer = false;
 	if (theImage.mAnimInfo != NULL)
 		mAnimInfo = new AnimInfo(*theImage.mAnimInfo);
 	else

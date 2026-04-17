@@ -421,8 +421,11 @@ bool WidgetManager::DrawScreen()
 	
 	mMinDeferredOverlayPriority = 0x7FFFFFFF;
 	mDeferredOverlayWidgets.resize(0);
-
 	Graphics aScrG(mImage);
+	// Clear the canvas to solid black before drawing current frame
+	aScrG.SetColor(Color(0, 0, 0, 255));
+	aScrG.FillRect(0, 0, mWidth, mHeight);
+
 	mCurG = &aScrG;
 
 	DDImage* aDDImage = dynamic_cast<DDImage*>(mImage);
@@ -430,7 +433,7 @@ bool WidgetManager::DrawScreen()
 	if (aDDImage != NULL)
 		surfaceLocked = aDDImage->LockSurface();
 
-	if (aDirtyCount > 0)
+	if (true) // Force drawing check
 	{
 		Graphics g(aScrG);
 		g.Translate(-mMouseDestRect.mX, -mMouseDestRect.mY);
@@ -444,7 +447,7 @@ bool WidgetManager::DrawScreen()
 			if (aWidget == mWidgetManager->mBaseModalWidget)
 				aModalFlags.mIsOver = true;
 
-			if ((aWidget->mDirty) && (aWidget->mVisible))
+			if ((aWidget->mDirty) || (aWidget == mWidgetManager->mBaseModalWidget) || (aWidget->mVisible))
 			{
 				Graphics aClipG(g);
 				aClipG.SetFastStretch(!is3D);

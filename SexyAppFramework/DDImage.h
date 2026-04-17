@@ -2,7 +2,6 @@
 #define __DDIMAGE_H__
 
 #include "MemoryImage.h"
-#include <ddraw.h>
 
 namespace Sexy
 {
@@ -18,7 +17,6 @@ protected:
 
 public:
 	DDInterface*			mDDInterface;
-	LPDIRECTDRAWSURFACE		mSurface;
 	bool					mSurfaceSet;
 	bool					mNoLock;
 	bool					mVideoMemory;
@@ -27,7 +25,8 @@ public:
 	bool					mDrawToBits;
 	
 	int						mLockCount;
-	DDSURFACEDESC			mLockedSurfaceDesc;
+
+	int						mBufferId;
 	
 private:
 	void					Init();
@@ -39,7 +38,6 @@ public:
 	virtual void			SetVideoMemory(bool wantVideoMemory);
 	virtual void			RehupFirstPixelTrans();
 
-	LPDIRECTDRAWSURFACE		GetSurface();	
 	virtual void			BitsChanged();
 	virtual void			CommitBits();	
 
@@ -69,8 +67,6 @@ public:
 	virtual bool			LockSurface();
 	virtual bool			UnlockSurface();
 
-	virtual void			SetSurface(LPDIRECTDRAWSURFACE theSurface);
-
 	virtual void			Create(int theWidth, int theHeight);
 	virtual ulong*			GetBits();
 	
@@ -92,6 +88,7 @@ public:
 	virtual void			PurgeBits();
 	virtual void			DeleteNativeData();
 	virtual void			DeleteExtraBuffers();	
+	virtual void			DeleteSWBuffers();
 };
 
 }

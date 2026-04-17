@@ -31,6 +31,9 @@ class TypingCheck;
 class MiniCreditsScreen;
 class AchievementScreen;
 class QuickPlayScreen;
+struct SDL_Window;
+struct SDL_Renderer;
+
 
 namespace Sexy
 {
@@ -140,6 +143,8 @@ public:
 	time_t							mStartTime;
 	SexyString                      mDetails;
 	SexyString                      mState;
+	static SDL_Window*				mSDLWindow;
+	static SDL_Renderer*			mSDLRenderer;
 
 public:
 	LawnApp();

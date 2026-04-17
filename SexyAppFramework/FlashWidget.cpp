@@ -1278,39 +1278,52 @@ void FlashWidget::Draw(Graphics* g)
 {	
 	if (mFlashDirty)
 	{
-		Graphics anImageG(mImage);	
-		DrawFlashBackground(&anImageG);	
+		if (mImage == NULL) return;
 
-		LPDIRECTDRAWSURFACE aSurface = mImage->GetSurface();
-		if (aSurface == NULL)
-			return;
+		int aWidth = mImage->mWidth;
+		int aHeight = mImage->mHeight;
 
-		HDC aDC = NULL;
-		if (aSurface->GetDC(&aDC) != S_OK)
-			return;	
+		HDC aDC = CreateCompatibleDC(NULL);
+		BITMAPINFO aBitmapInfo;
+		memset(&aBitmapInfo, 0, sizeof(aBitmapInfo));
+		aBitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		aBitmapInfo.bmiHeader.biWidth = aWidth;
+		aBitmapInfo.bmiHeader.biHeight = -aHeight;
+		aBitmapInfo.bmiHeader.biPlanes = 1;
+		aBitmapInfo.bmiHeader.biBitCount = 32;
+		aBitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+		void* aBits = NULL;
+		HBITMAP aBitmap = CreateDIBSection(aDC, &aBitmapInfo, DIB_RGB_COLORS, &aBits, NULL, 0);
+		HBITMAP anOldBitmap = (HBITMAP)SelectObject(aDC, aBitmap);
+
+		// Initial background draw if needed
+		Graphics anImageG(mImage);
+		DrawFlashBackground(&anImageG);
 
 		IViewObject* aViewObject = NULL;
-		mFlashInterface->QueryInterface(IID_IViewObject, (LPVOID*) &aViewObject);
+		mFlashInterface->QueryInterface(IID_IViewObject, (LPVOID*)&aViewObject);
 		if (aViewObject != NULL)
 		{
-			RECTL aRect = {0, 0, mWidth, mHeight};
-
+			RECTL aRect = { 0, 0, aWidth, aHeight };
 			Point anAbsPos = GetAbsPos();
 
-			HRGN aRgn = CreateRectRgn(mDirtyRect.mX - anAbsPos.mX, mDirtyRect.mY - anAbsPos.mY, 
-				mDirtyRect.mX + mDirtyRect.mWidth - anAbsPos.mX, 
+			HRGN aRgn = CreateRectRgn(mDirtyRect.mX - anAbsPos.mX, mDirtyRect.mY - anAbsPos.mY,
+				mDirtyRect.mX + mDirtyRect.mWidth - anAbsPos.mX,
 				mDirtyRect.mY + mDirtyRect.mHeight - anAbsPos.mY);
 			SelectClipRgn(aDC, aRgn);
 			DeleteObject(aRgn);
 
-			aViewObject->Draw(DVASPECT_CONTENT, 1,
-				NULL, NULL, NULL, aDC, &aRect, NULL, NULL,
-				0);
-
+			aViewObject->Draw(DVASPECT_CONTENT, 1, NULL, NULL, NULL, aDC, &aRect, NULL, NULL, 0);
 			aViewObject->Release();
 		}
 
-		aSurface->ReleaseDC(aDC);
+		GdiFlush();
+		memcpy(mImage->GetBits(), aBits, aWidth * aHeight * sizeof(ulong));
+
+		SelectObject(aDC, anOldBitmap);
+		DeleteObject(aBitmap);
+		DeleteDC(aDC);
 
 		mFlashDirty = false;
 	}

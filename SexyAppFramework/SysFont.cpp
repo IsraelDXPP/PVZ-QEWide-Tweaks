@@ -184,49 +184,7 @@ int	SysFont::StringWidth(const SexyString& theString)
 
 void SysFont::DrawString(Graphics* g, int theX, int theY, const SexyString& theString, const Color& theColor, const Rect& theClipRect)
 {
-	DDImage* aDDImage = dynamic_cast<DDImage*>(g->mDestImage);
-
-	if (aDDImage != NULL)
-	{
-		LPDIRECTDRAWSURFACE aSurface = aDDImage->GetSurface();
-		if (aSurface != NULL)
-		{
-			HDC aDC;
-
-			if (aDDImage->mLockCount > 0)
-				aDDImage->mSurface->Unlock(NULL);
-
-			if ((g->mDestImage == gSexyAppBase->mWidgetManager->mImage) && (gSexyAppBase->Is3DAccelerated()))
-				gSexyAppBase->mDDInterface->mD3DInterface->Flush();				
-			
-			if (aSurface->GetDC(&aDC) == DD_OK)
-			{				
-				HFONT anOldFont = (HFONT) SelectObject(aDC, mHFont);
-				SetBkMode(aDC, TRANSPARENT); 
-				IntersectClipRect(aDC, theClipRect.mX, theClipRect.mY, theClipRect.mX + theClipRect.mWidth, theClipRect.mY + theClipRect.mHeight);
-
-				if (mDrawShadow)
-				{
-					SetTextColor(aDC, RGB(0,0,0));
-					TextOut(aDC, theX + g->mTransX+1, theY - mAscent + 1 + g->mTransY+1, theString.c_str(), theString.length());
-					if (mSimulateBold)
-						TextOut(aDC, theX + g->mTransX+2, theY - mAscent + 1 + g->mTransY+1, theString.c_str(), theString.length());
-				}
-				SetTextColor(aDC, RGB(theColor.GetRed(), theColor.GetGreen(), theColor.GetBlue()));
-				TextOut(aDC, theX + g->mTransX, theY - mAscent + 1 + g->mTransY, theString.c_str(), theString.length());
-				if (mSimulateBold)
-					TextOut(aDC, theX + g->mTransX + 1, theY - mAscent + 1 + g->mTransY, theString.c_str(), theString.length());
-
-				::SelectObject(aDC, anOldFont);
-				aSurface->ReleaseDC(aDC);
-				aDDImage->DeleteAllNonSurfaceData();				
-			}			
-
-			if (aDDImage->mLockCount > 0)
-				aDDImage->mSurface->Lock(NULL, &aDDImage->mLockedSurfaceDesc, DDLOCK_SURFACEMEMORYPTR | DDLOCK_WAIT, NULL);			
-		}
-	}
-	else if (g->mDestImage != &Graphics::mStaticImage) // DrawString can be called when not drawing onto an image.
+	if (g->mDestImage != &Graphics::mStaticImage) // DrawString can be called when not drawing onto an image.
 	{
 		HDC aDC = CreateCompatibleDC(NULL);
 		HFONT anOldFont = (HFONT) SelectObject(aDC, mHFont);

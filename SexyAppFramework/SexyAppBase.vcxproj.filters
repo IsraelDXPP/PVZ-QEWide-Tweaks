@@ -171,9 +171,6 @@
     <ClCompile Include="ImageFont.cpp">
       <Filter>Sexy\Graphics\Graphics Source</Filter>
     </ClCompile>
-    <ClCompile Include="MemoryImage.cpp">
-      <Filter>Sexy\Graphics\Graphics Source</Filter>
-    </ClCompile>
     <ClCompile Include="NativeDisplay.cpp">
       <Filter>Sexy\Graphics\Graphics Source</Filter>
     </ClCompile>
@@ -953,6 +950,8 @@
     <ClCompile Include="..\Lawn\Widget\CursorWidget.cpp">
       <Filter>Lawn\Widget\Widget Source</Filter>
     </ClCompile>
+    <ClCompile Include="SDL3TextureManager.cpp" />
+    <ClCompile Include="MemoryImage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Color.h">
@@ -1641,6 +1640,7 @@
     <ClInclude Include="..\Lawn\Widget\CursorWidget.h">
       <Filter>Lawn\Widget\Widget Include</Filter>
     </ClInclude>
+    <ClInclude Include="SDL3TextureManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="BltRotatedHelper.inc">
@@ -1831,5 +1831,8 @@
     <Text Include="..\DiscordRPC\CMakeLists.txt">
       <Filter>DiscordRPC</Filter>
     </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="Debug\SDL3TextureManager.obj" />
   </ItemGroup>
 </Project>

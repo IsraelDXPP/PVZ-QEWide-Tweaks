@@ -31,6 +31,7 @@ public:
 	bool					mHasTrans;
 	bool					mHasAlpha;
 	bool					mIsVolatile;
+	bool                    mFirstPixelTrans;
 	bool					mPurgeBits;
 	bool					mWantPal;
 	
@@ -40,7 +41,14 @@ public:
 
 	bool					mBitsChanged;
 	SexyAppBase*			mApp;
+	int						mBufferId;
+	static int				gNextBufferId;
+	static ulong*			gLastValidScreenBits;
 	
+#define GET_DEST_BITS(img) \
+    (((img)->mIsScreenBuffer) ? \
+    MemoryImage::gLastValidScreenBits : (img)->mBits)
+
 private:
 	void					Init();
 

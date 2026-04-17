@@ -2,6 +2,12 @@
 
 #include "SWTri.h"
 #include "Debug.h"
+#include "SexyAppBase.h"
+#include "DDInterface.h"
+#include "DDImage.h"
+#include "MemoryImage.h"
+#include "../Sexy.TodLib/TodDebug.h"
+#include <cmath>
 
 using namespace Sexy;
 
@@ -292,6 +298,106 @@ static inline int	clipShape(SWHelper::XYZStruct ** dst, SWHelper::XYZStruct ** s
 
 void SWHelper::SWDrawShape(XYZStruct *theVerts, int theNumVerts, MemoryImage *theImage, const Color &theColor, int theDrawMode, const Rect &theClipRect, void *theSurface, int thePitch, int thePixelFormat, bool blend, bool vertexColor)
 {
+	// DEEP DIAGNOSTIC TRACING
+	int aTargetID = -1;
+	ulong* aScreenBits = NULL;
+	int aScreenID = -1;
+
+	if (gSexyAppBase && gSexyAppBase->mDDInterface && gSexyAppBase->mDDInterface->mScreenImage)
+	{
+		aScreenBits = gSexyAppBase->mDDInterface->mScreenImage->GetBits();
+		aScreenID = gSexyAppBase->mDDInterface->mScreenImage->mBufferId;
+	}
+
+	int aImageID = (theImage) ? theImage->mBufferId : -1;
+	ulong* aImageBits = (theImage) ? theImage->GetBits() : NULL;
+
+	// SNAPSHOT INTERCEPTION: Catch-all guard for the software rasterizer destination
+	if (gSexyAppBase && gSexyAppBase->mIsDrawing && 
+		gSexyAppBase->mDDInterface && gSexyAppBase->mDDInterface->mScreenImage)
+	{
+		// Identify target by context: if we are drawing and the surface matches the screen's intended target
+		if (theSurface == gSexyAppBase->mDDInterface->mScreenImage->mBits && 
+			theSurface != MemoryImage::gLastValidScreenBits)
+		{
+			TodTrace("[DESYNC DETECTED] SWDrawShape redirected stale surface pointer to snapshot!");
+			theSurface = MemoryImage::gLastValidScreenBits;
+		}
+	}
+
+	// Ownership / Mismatch Audit
+	if (theSurface != aImageBits && theImage != NULL)
+	{
+		// This is often normal for sprites, but critical for Screen-Targeted draws
+		if (theSurface == aScreenBits)
+		{
+			TodTrace("[DRAW] Target:SCREEN(%p, ID:%d) | SourceImage:%p (Bits:%p, ID:%d) | Pitch:%d", 
+				theSurface, aScreenID, theImage, aImageBits, aImageID, thePitch);
+		}
+	}
+
+	if (theSurface == NULL || thePitch <= 0)
+		return;
+
+	// LAST LINE OF DEFENSE: Pointer Sanity
+	uintptr_t pix_test = reinterpret_cast<uintptr_t>(theSurface);
+	if (pix_test < 0x100000 || pix_test > 0x7FFFFFFF)
+	{
+		TodTrace("[OWNERSHIP ERROR] STALE/INVALID POINTER DETECTED! Surface:%p | ScreenBits:%p (ID:%d)", 
+			theSurface, aScreenBits, aScreenID);
+		return; 
+	}
+
+	// GEOMETRIC INTEGRITY SAFETY LAYER (EXTENDED)
+	// 1. Pointer range check: prevent near-null addresses
+	if (reinterpret_cast<uintptr_t>(theSurface) < 0x10000)
+	{
+		TodTrace("SWDrawShape: SKIP draw - Invalid surface pointer: %p", theSurface);
+		return;
+	}
+
+	// 2. Alignment check: must be 4-byte aligned for 32-bit
+	if (thePitch % 4 != 0)
+	{
+		TodTrace("SWDrawShape: SKIP draw - Invalid pitch alignment: %d", thePitch);
+		return;
+	}
+
+	float aDestWidth = (float)(thePitch / 4);
+
+	// 3. Hard limit check: prevent overflow from insane dimensions
+	if (aDestWidth <= 0 || aDestWidth > 10000.0f)
+	{
+		TodTrace("SWDrawShape: SKIP draw - Insane destination width: %.0f (Pitch: %d)", aDestWidth, thePitch);
+		return;
+	}
+
+	if (theImage == NULL || theImage->GetBits() == NULL)
+		return;
+
+	float aDestHeight = (gSexyAppBase != NULL) ? (float)gSexyAppBase->mHeight : 600.0f;
+
+	for (int i = 0; i < theNumVerts; ++i)
+	{
+		float x = theVerts[i].mX;
+		float y = theVerts[i].mY;
+
+		// 4. Finite check (NaN or Inf)
+		if (!std::isfinite(x) || !std::isfinite(y))
+		{
+			TodTrace("SWDrawShape: SKIP draw - Non-finite vertex [%d]: (%.2f, %.2f)", i, x, y);
+			return;
+		}
+
+		// 5. Loose Bounding Box Check (detect "crazy" geometry)
+		if (x < -1000.0f || x > aDestWidth + 1000.0f || y < -1000.0f || y > aDestHeight + 1000.0f)
+		{
+			TodTrace("SWDrawShape: SKIP draw - Out of bounds vertex [%d]: (%.2f, %.2f) | Target: %.0fx%.0f Pitch: %d", 
+				i, x, y, aDestWidth, aDestHeight, thePitch);
+			return;
+		}
+	}
+
 	float	tclx0 = theClipRect.mX;
 	float	tcly0 = theClipRect.mY;
 	float	tclx1 = theClipRect.mX + theClipRect.mWidth - 1;

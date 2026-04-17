@@ -29,7 +29,7 @@ enum D3DImageFlags
 ///////////////////////////////////////////////////////////////////////////////
 struct TextureDataPiece
 {
-	LPDIRECTDRAWSURFACE7 mTexture;
+	// LPDIRECTDRAWSURFACE7 mTexture;
 	int mWidth,mHeight;
 };
 
@@ -52,7 +52,7 @@ public:
 	typedef std::vector<TextureDataPiece> TextureVector;
 
 	TextureVector mTextures;
-	LPDIRECTDRAWPALETTE mPalette;
+	// LPDIRECTDRAWPALETTE mPalette;
 	
 	int mWidth,mHeight;
 	int mTexVecWidth, mTexVecHeight;
@@ -88,11 +88,11 @@ public:
 	int						mWidth;
 	int						mHeight;
 
-	LPDIRECTDRAW7			mDD;
-	LPDIRECTDRAWSURFACE7	mDDSDrawSurface;
-	LPDIRECTDRAWSURFACE7	mZBuffer;
-	LPDIRECT3D7				mD3D;
-	LPDIRECT3DDEVICE7		mD3DDevice;
+	// LPDIRECTDRAW7			mDD;
+	// LPDIRECTDRAWSURFACE7	mDDSDrawSurface;
+	// LPDIRECTDRAWSURFACE7	mZBuffer;
+	// LPDIRECT3D7				mD3D;
+	// LPDIRECT3DDEVICE7		mD3DDevice;
 	D3DVIEWPORT7			mD3DViewport;
 
 	bool					mSceneBegun;

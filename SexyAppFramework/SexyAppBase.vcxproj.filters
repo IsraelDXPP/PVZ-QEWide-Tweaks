@@ -951,7 +951,9 @@
       <Filter>Lawn\Widget\Widget Source</Filter>
     </ClCompile>
     <ClCompile Include="SDL3TextureManager.cpp" />
-    <ClCompile Include="MemoryImage.cpp" />
+    <ClCompile Include="MemoryImage.cpp">
+      <Filter>Sexy\Graphics\Graphics Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Color.h">
@@ -1833,6 +1835,5 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Object Include="Debug\SDL3TextureManager.obj" />
   </ItemGroup>
 </Project>

@@ -209,30 +209,16 @@ void SDL3TextureManager::Remove(Image* theImage)
 static inline void SetupBlendMode(Image* srcImage, SDL_Texture* tex, int drawMode, const Color& theColor)
 {
     if (!srcImage || !tex) return;
-    
-    MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(srcImage);
 
     if (drawMode == Graphics::DRAWMODE_ADDITIVE)
     {
         SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_ADD);
     }
-    else 
+    else
     {
-        // PRIORITIZE VISUAL CORRECTNESS:
-        // Force BLEND if the image has ANY flag that might imply transparency.
-        // Legacy SexyApp images often have unreliable mHasAlpha/mHasTrans flags.
-        bool isOpaque = true;
-        if (theColor.mAlpha < 255) isOpaque = false;
-        else if (aMemImage)
-        {
-            if (aMemImage->mHasAlpha || aMemImage->mHasTrans) isOpaque = false;
-            else if (aMemImage->mFirstPixelTrans) isOpaque = false; // Legacy first-pixel transparency
-        }
-
-        if (isOpaque)
-            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
-        else
-            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+        // En lugar de intentar adivinar si es opaco, usa siempre BLEND 
+        // a menos que sea el fondo de la pantalla.
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
     }
 
     SDL_SetTextureColorMod(tex, theColor.mRed, theColor.mGreen, theColor.mBlue);

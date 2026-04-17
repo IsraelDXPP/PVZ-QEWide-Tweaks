@@ -1,5 +1,7 @@
 #include "MemoryImage.h"
-
+#include "DDInterface.h"
+#include "D3DInterface.h"
+#include "NativeDisplay.h"
 #include "SexyAppBase.h"
 #include "Graphics.h"
 #include "NativeDisplay.h"

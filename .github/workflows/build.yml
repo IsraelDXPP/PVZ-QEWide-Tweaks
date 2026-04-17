@@ -5,9 +5,9 @@ name: Build & Release
 # ──────────────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, SDL3 ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, SDL3 ]
   workflow_dispatch:
 
 # ──────────────────────────────────────────────────────────────────────────────

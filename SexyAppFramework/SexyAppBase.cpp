@@ -6273,7 +6273,11 @@ void SexyAppBase::Init()
 			char aPath[MAX_PATH];
 			aFunc(NULL, CSIDL_COMMON_APPDATA, NULL, SHGFP_TYPE_CURRENT, aPath);
 
-			SetAppDataFolder("appdata\\");
+			// Use absolute path relative to executable location
+			std::string aExeDir = mChangeDirTo;
+			if (!aExeDir.empty() && aExeDir[aExeDir.length() - 1] != '\\')
+				aExeDir += '\\';
+			SetAppDataFolder(aExeDir + "appdata\\");
 			if (mDemoFileName.length() < 2 || (mDemoFileName[1] != ':' && mDemoFileName[2] != '\\'))
 			{
 				mDemoFileName = GetAppDataFolder() + mDemoFileName;

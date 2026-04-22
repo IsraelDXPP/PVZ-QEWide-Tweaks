@@ -1609,6 +1609,7 @@ void SexyAppBase::WriteToRegistry()
 	RegistryWriteInteger("QE_SpeedModifier", mSpeedModifier);
 	RegistryWriteInteger("QE_QuickLevel", mQuickLevel);
 	RegistryWriteBoolean("WaitForVSync", mWaitForVSync);
+	RegistryWriteBoolean("QE_VSync", mVSyncUpdates);
 	RegistryWriteBoolean("QE_DiscordPresence", mDiscordPresence);
 	RegistryWriteBoolean("QE_BankKeybinds", mBankKeybinds);
 	RegistryWriteBoolean("QE_ZeroNineBankFormat", mZeroNineBankFormat);
@@ -1970,6 +1971,7 @@ void SexyAppBase::ReadFromRegistry()
 		EnableCustomCursors(anInt != 0);
 
 	RegistryReadBoolean("WaitForVSync", &mWaitForVSync);
+	RegistryReadBoolean("QE_VSync", &mVSyncUpdates);
 	RegistryReadBoolean("QE_DiscordPresence", &mDiscordPresence);
 	RegistryReadBoolean("QE_BankKeybinds", &mBankKeybinds);
 	RegistryReadBoolean("QE_ZeroNineBankFormat", &mZeroNineBankFormat);

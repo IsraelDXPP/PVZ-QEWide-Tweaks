@@ -1600,6 +1600,7 @@ void SexyAppBase::WriteToRegistry()
 	RegistryWriteString("QE_Language", mLanguage);
 	RegistryWriteString("QE_ResourcePack", mResourcePack);
 	RegistryWriteBoolean("QE_CustomCursor", mCustomCursor);
+	RegistryWriteBoolean("QE_VSync", mWaitForVSync);
 	RegistryWriteBoolean("3DAcceleration", mIs3dAccel);
 	RegistryWriteInteger("MouseSensitivity", (int)(mMouseSensitivity * 100));
 }
@@ -1950,6 +1951,7 @@ void SexyAppBase::ReadFromRegistry()
 		EnableCustomCursors(anInt != 0);
 
 	RegistryReadBoolean("WaitForVSync", &mWaitForVSync);
+	RegistryReadBoolean("QE_VSync", &mWaitForVSync);
 	RegistryReadBoolean("QE_DiscordPresence", &mDiscordPresence);
 	RegistryReadBoolean("QE_BankKeybinds", &mBankKeybinds);
 	RegistryReadBoolean("QE_ZeroNineBankFormat", &mZeroNineBankFormat);

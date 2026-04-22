@@ -33,6 +33,7 @@ protected:
 		NewOptionsDialog_ReloadResourcePacks,
 		NewOptionsDialog_ResourcePack,
 		NewOptionsDialog_Real_HardwareAcceleration,
+		NewOptionsDialog_VSync,
 		NewOptionsDialog_CustomCursor,
 		NewOptionsDialog_LeftPage,
 		NewOptionsDialog_RightPage,
@@ -48,6 +49,7 @@ public:
 	Sexy::Checkbox*			mDebugModeCheckbox;
 	Sexy::Checkbox*			mDiscordCheckbox;
 	Sexy::Checkbox*			mBankKeybindsCheckbox;
+	Sexy::Checkbox*			mVSyncCheckbox;
 	Sexy::Checkbox*			m09FormatCheckbox;
 	Sexy::Checkbox*			mAutoCollectSunsCheckbox;
 	Sexy::Checkbox*			mAutoCollectCoinsCheckbox;

@@ -1,4 +1,4 @@
-﻿#include "../Board.h"
+#include "../Board.h"
 #include "GameButton.h"
 #include "../Cutscene.h"
 #include "AlmanacDialog.h"
@@ -53,6 +53,8 @@ NewOptionsDialog::NewOptionsDialog(LawnApp* theApp, bool theFromGameSelector, bo
     mSfxVolumeSlider->SetValue(mApp->GetSfxVolume());
 
     mFullscreenCheckbox = MakeNewCheckbox(NewOptionsDialog::NewOptionsDialog_Fullscreen, this, !mApp->mIsWindowed);
+    mVSyncCheckbox = MakeNewCheckbox(NewOptionsDialog::NewOptionsDialog_VSync, this, mApp->mWaitForVSync);
+    mVSyncCheckbox->SetVisible(false);
     mHardwareAccelerationCheckbox = MakeNewCheckbox(NewOptionsDialog::NewOptionsDialog_HardwareAcceleration, this, mApp->Is3dAccel());
     mDebugModeCheckbox = MakeNewCheckbox(-1, this, mApp->mTodCheatKeys);
     mDebugModeCheckbox->SetVisible(false);
@@ -184,6 +186,7 @@ NewOptionsDialog::~NewOptionsDialog()
     delete mMusicVolumeSlider;
     delete mSfxVolumeSlider;
     delete mFullscreenCheckbox;
+    delete mVSyncCheckbox;
     delete mHardwareAccelerationCheckbox;
     delete mDebugModeCheckbox;
     delete mDiscordCheckbox;
@@ -229,6 +232,7 @@ void NewOptionsDialog::AddedToManager(Sexy::WidgetManager* theWidgetManager)
     AddWidget(mBankKeybindsCheckbox);
     AddWidget(m09FormatCheckbox);
     AddWidget(mFullscreenCheckbox);
+    AddWidget(mVSyncCheckbox);
     AddWidget(mBackToGameButton);
     AddWidget(mLeftPageButton);
     AddWidget(mRightPageButton);
@@ -253,6 +257,7 @@ void NewOptionsDialog::RemovedFromManager(Sexy::WidgetManager* theWidgetManager)
     RemoveWidget(mMusicVolumeSlider);
     RemoveWidget(mSfxVolumeSlider);
     RemoveWidget(mFullscreenCheckbox);
+    RemoveWidget(mVSyncCheckbox);
     RemoveWidget(mHardwareAccelerationCheckbox);
     RemoveWidget(mDebugModeCheckbox);
     RemoveWidget(mDiscordCheckbox);
@@ -316,7 +321,8 @@ void NewOptionsDialog::Resize(int theX, int theY, int theWidth, int theHeight)
     ResizeLanguageButton();
     //PAGE 4
     mRealHardwareAccelerationCheckbox->Resize(ADVANCEDOPTIONS_SPEED_X, ADVANCEDOPTIONS_SPEED_Y, 46, 39);
-    mCustomCursorCheckbox->Resize(mRealHardwareAccelerationCheckbox->mX, mRealHardwareAccelerationCheckbox->mY + 40, 46, 39);
+    mVSyncCheckbox->Resize(mRealHardwareAccelerationCheckbox->mX, mRealHardwareAccelerationCheckbox->mY + 40, 46, 39);
+    mCustomCursorCheckbox->Resize(mVSyncCheckbox->mX, mVSyncCheckbox->mY + 40, 46, 39);
 
     if ((!mRestartButton->mVisible || !mAlmanacButton->mVisible) && !mFromGameSelector && !mAdvancedMode)
     {
@@ -340,9 +346,14 @@ void NewOptionsDialog::Resize(int theX, int theY, int theWidth, int theHeight)
         mSfxVolumeSlider->SetVisible(false);
         mHardwareAccelerationCheckbox->SetVisible(false);
         mFullscreenCheckbox->SetVisible(false);
+        mVSyncCheckbox->SetVisible(false);
         mLeftPageButton->SetVisible(true);
         mRightPageButton->SetVisible(true);
         UpdateAdvancedPage();
+    }
+    else
+    {
+        mVSyncCheckbox->SetVisible(false);
     }
 
     if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
@@ -402,6 +413,7 @@ void NewOptionsDialog::Draw(Sexy::Graphics* g)
             break;
         case 4:
             TodDrawString(g, TodStringTranslate(_S("[OPTIONS_ACTUAL_ACCELERATION]")), mRealHardwareAccelerationCheckbox->mX - 6, mRealHardwareAccelerationCheckbox->mY + 22, FONT_DWARVENTODCRAFT18, cTextColor, DrawStringJustification::DS_ALIGN_RIGHT);
+            TodDrawString(g, _S("VSync"), mVSyncCheckbox->mX - 6, mVSyncCheckbox->mY + 22, FONT_DWARVENTODCRAFT18, cTextColor, DrawStringJustification::DS_ALIGN_RIGHT);
             TodDrawString(g, TodStringTranslate(_S("[OPTIONS_CUSTOM_CURSOR]")), mCustomCursorCheckbox->mX - 6, mCustomCursorCheckbox->mY + 22, FONT_DWARVENTODCRAFT18, cTextColor, DrawStringJustification::DS_ALIGN_RIGHT);
             break;
         }
@@ -447,6 +459,10 @@ void NewOptionsDialog::CheckboxChecked(int theId, bool checked)
 
             mFullscreenCheckbox->SetChecked(true, false);
         }
+        break;
+
+    case NewOptionsDialog::NewOptionsDialog_VSync:
+        mApp->mWaitForVSync = checked;
         break;
 
     case NewOptionsDialog::NewOptionsDialog_HardwareAcceleration:
@@ -517,6 +533,7 @@ void NewOptionsDialog::UpdateAdvancedPage()
     mReloadResourcePacksButton->SetVisible(false);
     mResourcePackButton->SetVisible(false);
     mRealHardwareAccelerationCheckbox->SetVisible(false);
+    mVSyncCheckbox->SetVisible(false);
     mCustomCursorCheckbox->SetVisible(false);
 
     switch (mAdvancedPage)
@@ -542,6 +559,7 @@ void NewOptionsDialog::UpdateAdvancedPage()
             break;
         case 4:
             mRealHardwareAccelerationCheckbox->SetVisible(true);
+            mVSyncCheckbox->SetVisible(true);
             mCustomCursorCheckbox->SetVisible(true);
             break;
     }

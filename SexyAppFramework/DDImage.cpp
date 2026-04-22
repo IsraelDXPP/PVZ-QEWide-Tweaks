@@ -212,7 +212,7 @@ void DDImage::FillScanLinesWithCoverage(Span* theSpans, int theSpanCount, const 
 
 void DDImage::FillRect(const Rect& theRect, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().FillRect(this, theRect, theColor, theDrawMode);
 		return;
@@ -222,7 +222,7 @@ void DDImage::FillRect(const Rect& theRect, const Color& theColor, int theDrawMo
 
 void DDImage::DrawLine(double theStartX, double theStartY, double theEndX, double theEndY, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().DrawLine(this, theStartX, theStartY, theEndX, theEndY, theColor, theDrawMode);
 		return;
@@ -232,7 +232,7 @@ void DDImage::DrawLine(double theStartX, double theStartY, double theEndX, doubl
 
 void DDImage::DrawLineAA(double theStartX, double theStartY, double theEndX, double theEndY, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().DrawLine(this, theStartX, theStartY, theEndX, theEndY, theColor, theDrawMode);
 		return;
@@ -242,7 +242,7 @@ void DDImage::DrawLineAA(double theStartX, double theStartY, double theEndX, dou
 
 void DDImage::Blt(Image* theImage, int theX, int theY, const Rect& theSrcRect, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().Blt(this, theImage, theX, theY, theSrcRect, theColor, theDrawMode);
 		return;
@@ -252,7 +252,7 @@ void DDImage::Blt(Image* theImage, int theX, int theY, const Rect& theSrcRect, c
 
 void DDImage::BltF(Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().BltF(this, theImage, theX, theY, theSrcRect, theClipRect, theColor, theDrawMode);
 		return;
@@ -262,7 +262,7 @@ void DDImage::BltF(Image* theImage, float theX, float theY, const Rect& theSrcRe
 
 void DDImage::BltRotated(Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, double theRot, float theRotCenterX, float theRotCenterY)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().BltRotated(this, theImage, theX, theY, theSrcRect, theClipRect, theColor, theDrawMode, theRot, theRotCenterX, theRotCenterY);
 		return;
@@ -272,7 +272,7 @@ void DDImage::BltRotated(Image* theImage, float theX, float theY, const Rect& th
 
 void DDImage::StretchBlt(Image* theImage, const Rect& theDestRect, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, bool fastStretch)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().StretchBlt(this, theImage, theDestRect, theSrcRect, theClipRect, theColor, theDrawMode, fastStretch);
 		return;
@@ -282,7 +282,7 @@ void DDImage::StretchBlt(Image* theImage, const Rect& theDestRect, const Rect& t
 
 void DDImage::BltMatrix(Image* theImage, float x, float y, const SexyMatrix3& theMatrix, const Rect& theClipRect, const Color& theColor, int theDrawMode, const Rect& theSrcRect, bool blend)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().BltMatrix(this, theImage, x, y, theMatrix, theClipRect, theColor, theDrawMode, theSrcRect, blend);
 		return;
@@ -292,7 +292,7 @@ void DDImage::BltMatrix(Image* theImage, float x, float y, const SexyMatrix3& th
 
 void DDImage::BltTrianglesTex(Image* theTexture, const TriVertex theVertices[][3], int theNumTriangles, const Rect& theClipRect, const Color& theColor, int theDrawMode, float tx, float ty, bool blend)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().BltTrianglesTex(this, theTexture, theVertices, theNumTriangles, theClipRect, theColor, theDrawMode, tx, ty, blend);
 		return;
@@ -302,7 +302,7 @@ void DDImage::BltTrianglesTex(Image* theTexture, const TriVertex theVertices[][3
 
 void DDImage::BltMirror(Image* theImage, int theX, int theY, const Rect& theSrcRect, const Color& theColor, int theDrawMode)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().BltMirror(this, theImage, theX, theY, theSrcRect, theColor, theDrawMode);
 		return;
@@ -312,7 +312,7 @@ void DDImage::BltMirror(Image* theImage, int theX, int theY, const Rect& theSrcR
 
 void DDImage::StretchBltMirror(Image* theImage, const Rect& theDestRectOrig, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, bool fastStretch)
 {
-	if (mApp && mApp->Is3DAccelerated() && mWantDDSurface)
+	if (mApp && mApp->Is3DAccelerated() && mIsScreenBuffer)
 	{
 		SDL3TextureManager::Instance().StretchBltMirror(this, theImage, theDestRectOrig, theSrcRect, theClipRect, theColor, theDrawMode, fastStretch);
 		return;

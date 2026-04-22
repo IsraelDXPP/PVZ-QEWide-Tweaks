@@ -26,6 +26,7 @@ protected:
 		NewOptionsDialog_MusicVolume,
 		NewOptionsDialog_SoundVolume,
 		NewOptionsDialog_Fullscreen,
+		NewOptionsDialog_VSync,
 		NewOptionsDialog_HardwareAcceleration,
 		NewOptionsDialog_Advanced,
 		NewOptionsDialog_ReloadLanguages,
@@ -44,6 +45,7 @@ public:
 	Sexy::Slider*			mMusicVolumeSlider;					
 	Sexy::Slider*			mSfxVolumeSlider;					
 	Sexy::Checkbox*			mFullscreenCheckbox;				
+	Sexy::Checkbox*			mVSyncCheckbox;
 	Sexy::Checkbox*			mHardwareAccelerationCheckbox;		
 	Sexy::Checkbox*			mDebugModeCheckbox;
 	Sexy::Checkbox*			mDiscordCheckbox;

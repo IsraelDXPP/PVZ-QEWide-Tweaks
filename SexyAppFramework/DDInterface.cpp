@@ -10,6 +10,7 @@
 #include "MemoryImage.h"
 #define SDL_DISABLE_OLD_NAMES
 #include <SDL3/SDL.h>
+#include "SDL3TextureManager.h"
 #include "../LawnApp.h"
 
 using namespace Sexy;
@@ -309,4 +310,5 @@ void DDInterface::RemoveDDImage(DDImage* theImage)
 
 void DDInterface::Remove3DData(MemoryImage* theImage)
 {
+	SDL3TextureManager::Instance().Remove(theImage);
 }

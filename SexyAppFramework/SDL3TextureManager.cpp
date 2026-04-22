@@ -9,6 +9,44 @@
 
 using namespace Sexy;
 
+// ============================================================
+//  Internal Helpers
+// ============================================================
+
+static inline void SetupBlendMode(Image* srcImage, SDL_Texture* tex, int drawMode, const Color& theColor)
+{
+    if (drawMode == Graphics::DRAWMODE_ADDITIVE)
+    {
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_ADD);
+        return;
+    }
+
+    MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(srcImage);
+    bool hasAlpha = aMemImage && (aMemImage->mHasAlpha || aMemImage->mHasTrans);
+
+    if (hasAlpha || theColor.mAlpha < 255)
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    else
+        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_NONE);
+}
+
+static inline void SetupColorMod(SDL_Texture* tex, const Color& theColor)
+{
+    SDL_SetTextureColorMod(tex, (Uint8)theColor.mRed, (Uint8)theColor.mGreen, (Uint8)theColor.mBlue);
+    SDL_SetTextureAlphaMod(tex, (Uint8)theColor.mAlpha);
+}
+
+static inline void ResetColorMod(SDL_Texture* tex)
+{
+    SDL_SetTextureColorMod(tex, 255, 255, 255);
+    SDL_SetTextureAlphaMod(tex, 255);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+}
+
+// ============================================================
+//  Lifecycle
+// ============================================================
+
 void SDL3TextureManager::SetRenderer(SDL_Renderer* theRenderer)
 {
     if (mRenderer == theRenderer) return;
@@ -29,14 +67,18 @@ void SDL3TextureManager::Cleanup()
         SDL_DestroyTexture(mStreamTex);
         mStreamTex = nullptr;
     }
-    mRenderer = nullptr; 
+    mRenderTarget = nullptr;
+    mRenderer = nullptr;
 }
+
+// ============================================================
+//  Frame Management
+// ============================================================
 
 void SDL3TextureManager::EndFrame()
 {
     if (!mRenderer) return;
 
-    // Grab the Screen Image representation
     DDImage* screenImage = nullptr;
     extern SexyAppBase* gSexyAppBase;
     if (gSexyAppBase && gSexyAppBase->mDDInterface)
@@ -44,61 +86,113 @@ void SDL3TextureManager::EndFrame()
 
     if (!screenImage) return;
 
-    SDL_Texture* screenTex = GetTextureForImage(screenImage);
-    if (!screenTex) return;
+    SDL_Texture* screenTex = nullptr;
+    auto it = mTextureMap.find(screenImage);
+    if (it != mTextureMap.end()) screenTex = it->second;
 
-    // Final Presentation from Screen Texture to Backbuffer
+    // Perform final upscale from screen texture to the backbuffer
     SDL_SetRenderTarget(mRenderer, nullptr);
     SDL_SetRenderDrawColor(mRenderer, 0, 0, 0, 255);
     SDL_RenderClear(mRenderer);
-    
-    // Present the fully composited screen texture
-    SDL_SetTextureBlendMode(screenTex, SDL_BLENDMODE_NONE);
-    SDL_RenderTexture(mRenderer, screenTex, nullptr, nullptr);
-    
-    SDL_RenderPresent(mRenderer);
 
-    // CRITICAL: Reset the target pointer so the next frame's first draw call 
-    // triggers VerifyTarget -> SetRenderTarget -> Hybrid Sync.
+    if (screenTex)
+    {
+        SDL_SetTextureBlendMode(screenTex, SDL_BLENDMODE_NONE);
+        SDL_SetTextureScaleMode(screenTex, SDL_SCALEMODE_LINEAR);
+        SDL_RenderTexture(mRenderer, screenTex, nullptr, nullptr);
+    }
+
+    SDL_RenderPresent(mRenderer);
     mRenderTarget = nullptr;
 }
 
+void SDL3TextureManager::FlushFrame(ulong* theBits, int theWidth, int theHeight)
+{
+    if (!mRenderer || !theBits || theWidth <= 0 || theHeight <= 0) return;
+
+    float tw = 0, th = 0;
+    if (mStreamTex) {
+        SDL_GetTextureSize(mStreamTex, &tw, &th);
+        if ((int)tw != theWidth || (int)th != theHeight) {
+            SDL_DestroyTexture(mStreamTex);
+            mStreamTex = nullptr;
+        }
+    }
+
+    if (!mStreamTex) {
+        mStreamTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, theWidth, theHeight);
+        SDL_SetTextureBlendMode(mStreamTex, SDL_BLENDMODE_NONE);
+    }
+
+    SDL_UpdateTexture(mStreamTex, nullptr, theBits, theWidth * sizeof(ulong));
+
+    SDL_SetRenderTarget(mRenderer, nullptr);
+    SDL_SetRenderDrawColor(mRenderer, 0, 0, 0, 255);
+    SDL_RenderClear(mRenderer);
+    SDL_RenderTexture(mRenderer, mStreamTex, nullptr, nullptr);
+    SDL_RenderPresent(mRenderer);
+}
+
+// ============================================================
+//  Target Management
+// ============================================================
+
 void SDL3TextureManager::VerifyTarget(DDImage* destImage)
 {
-    if (destImage)
-    {
-        if (mRenderTarget != destImage)
-            SetRenderTarget(destImage);
-        else if (destImage->mIsScreenBuffer && mSyncCount[destImage] != destImage->mBitsChangedCount)
-            SetRenderTarget(destImage); // Re-trigger sync if screen bits changed
-    }
+    if (!destImage) return;
+    if (mRenderTarget != destImage)
+        SetRenderTarget(destImage);
 }
 
 void SDL3TextureManager::SetRenderTarget(DDImage* theTargetImage)
 {
     if (!mRenderer || !theTargetImage) return;
     mRenderTarget = theTargetImage;
-    
-    SDL_Texture* aTex = GetTextureForImage(theTargetImage);
-    
-    // HYBRID SYNC: If this is the screen and bits changed in software, upload BEFORE drawing GPU sprites.
-    // This prevents the software background from overwriting hardware sprites later.
-    if (theTargetImage->mIsScreenBuffer && theTargetImage->mBits && mSyncCount[theTargetImage] != theTargetImage->mBitsChangedCount)
-    {
-        if (!mStreamTex) {
-            mStreamTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, theTargetImage->mWidth, theTargetImage->mHeight);
-        }
-        SDL_UpdateTexture(mStreamTex, nullptr, theTargetImage->mBits, theTargetImage->mWidth * sizeof(ulong));
-        mSyncCount[theTargetImage] = theTargetImage->mBitsChangedCount;
 
-        // Base the texture on the current software bits
-        SDL_SetRenderTarget(mRenderer, aTex);
-        SDL_SetTextureBlendMode(mStreamTex, SDL_BLENDMODE_NONE);
-        SDL_RenderTexture(mRenderer, mStreamTex, nullptr, nullptr);
+    // Ensure texture exists for the target
+    auto it = mTextureMap.find(theTargetImage);
+    if (it == mTextureMap.end())
+    {
+        if (!GenerateTextureForImage(theTargetImage)) return;
+        it = mTextureMap.find(theTargetImage);
     }
 
-    SDL_SetRenderTarget(mRenderer, aTex);
+    // HYBRID SYNC: If this is the screen buffer and software bits changed,
+    // upload them to the GPU texture before drawing hardware sprites on top.
+    // Optimization: Only do this if software rendering is actually active (mDrawToBits).
+    if (theTargetImage->mIsScreenBuffer && theTargetImage->mDrawToBits && theTargetImage->mBits &&
+        mSyncCount[theTargetImage] != theTargetImage->mBitsChangedCount)
+    {
+        // Ensure streaming tex matches target dimensions
+        float tw = 0, th = 0;
+        if (mStreamTex) {
+            SDL_GetTextureSize(mStreamTex, &tw, &th);
+            if ((int)tw != theTargetImage->mWidth || (int)th != theTargetImage->mHeight) {
+                SDL_DestroyTexture(mStreamTex);
+                mStreamTex = nullptr;
+            }
+        }
+        if (!mStreamTex)
+            mStreamTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, 
+                SDL_TEXTUREACCESS_STREAMING, theTargetImage->mWidth, theTargetImage->mHeight);
+
+        SDL_UpdateTexture(mStreamTex, nullptr, theTargetImage->mBits,
+            theTargetImage->mWidth * sizeof(ulong));
+        mSyncCount[theTargetImage] = theTargetImage->mBitsChangedCount;
+
+        SDL_SetRenderTarget(mRenderer, it->second);
+        SDL_SetTextureBlendMode(mStreamTex, SDL_BLENDMODE_NONE);
+        SDL_SetTextureScaleMode(mStreamTex, SDL_SCALEMODE_LINEAR);
+        SDL_FRect r = { 0, 0, (float)theTargetImage->mWidth, (float)theTargetImage->mHeight };
+        SDL_RenderTexture(mRenderer, mStreamTex, &r, &r);
+    }
+
+    SDL_SetRenderTarget(mRenderer, it->second);
 }
+
+// ============================================================
+//  Texture Lifecycle
+// ============================================================
 
 SDL_Texture* SDL3TextureManager::GetTextureForImage(Image* theImage)
 {
@@ -111,15 +205,18 @@ SDL_Texture* SDL3TextureManager::GetTextureForImage(Image* theImage)
         it = mTextureMap.find(theImage);
     }
 
+    // Sync if bits have changed since last upload
     MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(theImage);
-    if (aMemImage)
+    if (aMemImage && !aMemImage->mIsScreenBuffer)
     {
-        // Don't perform standard SDL_UpdateTexture on the screen buffer here.
-        // We handle screen/target synchronization exclusively in SetRenderTarget 
-        // using the hybrid sync to avoid API conflicts.
-        if (!aMemImage->mIsScreenBuffer && mSyncCount[theImage] != aMemImage->mBitsChangedCount)
+        ulong* bits = aMemImage->mBits ? aMemImage->mBits : aMemImage->GetBits();
+        if (bits)
         {
-            UpdateTextureForImage(theImage);
+            bool needsUpdate = aMemImage->mBitsChanged ||
+                               mSyncCount.find(theImage) == mSyncCount.end() ||
+                               mSyncCount[theImage] != aMemImage->mBitsChangedCount;
+            if (needsUpdate)
+                UpdateTextureForImage(theImage);
         }
     }
 
@@ -129,44 +226,70 @@ SDL_Texture* SDL3TextureManager::GetTextureForImage(Image* theImage)
 bool SDL3TextureManager::GenerateTextureForImage(Image* theImage)
 {
     if (!mRenderer || !theImage) return false;
-    
     if (mTextureMap.count(theImage)) return true;
 
     MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(theImage);
     if (!aMemImage) return false;
 
-    // Use mIsScreenBuffer flag for robust target identification
-    bool isTarget = aMemImage->mIsScreenBuffer;
+    // Screen/render targets use TARGET access. Everything else uses STATIC.
+    SDL_TextureAccess access = aMemImage->mIsScreenBuffer
+        ? SDL_TEXTUREACCESS_TARGET
+        : SDL_TEXTUREACCESS_STATIC;
 
-    SDL_TextureAccess access = isTarget ? SDL_TEXTUREACCESS_TARGET : SDL_TEXTUREACCESS_STATIC;
-    SDL_Texture* aTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, access, theImage->mWidth, theImage->mHeight);
-    
+    SDL_Texture* aTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, access,
+                                          theImage->mWidth, theImage->mHeight);
     if (!aTex) return false;
 
     mTextureMap[theImage] = aTex;
-    mSyncCount[theImage] = aMemImage->mBitsChangedCount;
+    mSyncCount[theImage] = -1;
 
-    // Use Linear scaling for backgrounds and images to prevent artifacts
     SDL_SetTextureScaleMode(aTex, SDL_SCALEMODE_LINEAR);
-    
-    if (isTarget)
+
+    if (aMemImage->mIsScreenBuffer)
     {
-        // For render targets (Screen), clear to Opaque Black immediately to avoid transparency bugs
+        // Clear the render target to opaque black immediately
+        SDL_Texture* prevTarget = SDL_GetRenderTarget(mRenderer);
         SDL_SetRenderTarget(mRenderer, aTex);
         SDL_SetRenderDrawColor(mRenderer, 0, 0, 0, 255);
         SDL_RenderClear(mRenderer);
-        SDL_SetRenderTarget(mRenderer, mRenderTarget ? GetTextureForImage(mRenderTarget) : nullptr);
-        SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_NONE); // The screen itself shouldn't blend with anything
+        SDL_SetRenderTarget(mRenderer, prevTarget);
+        SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_NONE);
     }
     else
     {
-        SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_BLEND);
-    }
+        // Try to get bits (forces lazy loading for PAK-backed images)
+        ulong* bits = aMemImage->mBits ? aMemImage->mBits : aMemImage->GetBits();
+        if (bits)
+        {
+            // Initial analysis to detect transparency
+            aMemImage->mBitsChanged = true;
+            aMemImage->CommitBits();
 
-    // Initial upload if bits exist
-    if (aMemImage->mBits)
-    {
-        SDL_UpdateTexture(aTex, nullptr, aMemImage->mBits, theImage->mWidth * sizeof(ulong));
+            // Alpha repair for "lying" JPEGs: if a static asset is 100% transparent, it's actually opaque.
+            // We only do this for fresh loads (mBitsChangedCount == 0) to avoid breaking dynamic images.
+            if (aMemImage->mBitsChangedCount == 0)
+            {
+                int total = aMemImage->mWidth * aMemImage->mHeight;
+                bool allZero = true;
+                for (int i = 0; i < total; i++) {
+                    if ((bits[i] & 0xFF000000) != 0) { allZero = false; break; }
+                }
+                if (allZero) {
+                    for (int i = 0; i < total; i++) bits[i] |= 0xFF000000;
+                    aMemImage->mHasTrans = false;
+                    aMemImage->mHasAlpha = false;
+                }
+            }
+            
+            SDL_UpdateTexture(aTex, nullptr, bits, theImage->mWidth * sizeof(ulong));
+            mSyncCount[theImage] = aMemImage->mBitsChangedCount;
+            aMemImage->mBitsChanged = false;
+        }
+        else
+        {
+            // No bits available - default to BLEND so we don't paint solid black
+            SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_BLEND);
+        }
     }
 
     return true;
@@ -178,16 +301,22 @@ void SDL3TextureManager::UpdateTextureForImage(Image* theImage)
     if (it == mTextureMap.end()) return;
 
     MemoryImage* aMemImage = dynamic_cast<MemoryImage*>(theImage);
-    if (aMemImage && aMemImage->mBits)
-    {
-        // Only CommitBits (expensive scan) if the image isn't the screen buffer
-        // Screen buffer is handled by hybrid sync and is assumed opaque
-        if (!aMemImage->mIsScreenBuffer)
-            aMemImage->CommitBits();
+    if (!aMemImage) return;
 
-        SDL_UpdateTexture(it->second, nullptr, aMemImage->mBits, theImage->mWidth * sizeof(ulong));
-        mSyncCount[theImage] = aMemImage->mBitsChangedCount;
+    // Force lazy loading for PAK-backed images
+    ulong* bits = aMemImage->mBits ? aMemImage->mBits : aMemImage->GetBits();
+    if (!bits) return;
+
+    // Scan for transparency changes - must happen BEFORE clearing mBitsChanged
+    if (aMemImage->mBitsChanged)
+    {
+        aMemImage->CommitBits();
+        aMemImage->mBitsChanged = false;
     }
+
+    // No repair here, only on initial load
+    SDL_UpdateTexture(it->second, nullptr, bits, theImage->mWidth * sizeof(ulong));
+    mSyncCount[theImage] = aMemImage->mBitsChangedCount;
 }
 
 void SDL3TextureManager::DeleteTextureForImage(Image* theImage)
@@ -195,7 +324,11 @@ void SDL3TextureManager::DeleteTextureForImage(Image* theImage)
     auto it = mTextureMap.find(theImage);
     if (it != mTextureMap.end())
     {
-        if (it->second) SDL_DestroyTexture(it->second);
+        if (it->second)
+        {
+            if (mRenderer) SDL_FlushRenderer(mRenderer);
+            SDL_DestroyTexture(it->second);
+        }
         mTextureMap.erase(it);
         mSyncCount.erase(theImage);
     }
@@ -206,24 +339,9 @@ void SDL3TextureManager::Remove(Image* theImage)
     DeleteTextureForImage(theImage);
 }
 
-static inline void SetupBlendMode(Image* srcImage, SDL_Texture* tex, int drawMode, const Color& theColor)
-{
-    if (!srcImage || !tex) return;
-
-    if (drawMode == Graphics::DRAWMODE_ADDITIVE)
-    {
-        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_ADD);
-    }
-    else
-    {
-        // En lugar de intentar adivinar si es opaco, usa siempre BLEND 
-        // a menos que sea el fondo de la pantalla.
-        SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-    }
-
-    SDL_SetTextureColorMod(tex, theColor.mRed, theColor.mGreen, theColor.mBlue);
-    SDL_SetTextureAlphaMod(tex, theColor.mAlpha);
-}
+// ============================================================
+//  Draw Operations
+// ============================================================
 
 void SDL3TextureManager::Blt(DDImage* theDestImage, Image* theImage, int theX, int theY, const Rect& theSrcRect, const Color& theColor, int theDrawMode)
 {
@@ -235,7 +353,28 @@ void SDL3TextureManager::Blt(DDImage* theDestImage, Image* theImage, int theX, i
     SDL_FRect dstR = { (float)theX, (float)theY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
 
     SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
     SDL_RenderTexture(mRenderer, aTex, &srcR, &dstR);
+    ResetColorMod(aTex);
+}
+
+void SDL3TextureManager::BltF(DDImage* theDestImage, Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode)
+{
+    VerifyTarget(theDestImage);
+    SDL_Texture* aTex = GetTextureForImage(theImage);
+    if (!aTex) return;
+
+    SDL_FRect srcR = { (float)theSrcRect.mX, (float)theSrcRect.mY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
+    SDL_FRect dstR = { theX, theY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
+
+    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
+
+    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
+    SDL_SetRenderClipRect(mRenderer, &clipRect);
+    SDL_RenderTexture(mRenderer, aTex, &srcR, &dstR);
+    SDL_SetRenderClipRect(mRenderer, nullptr);
+    ResetColorMod(aTex);
 }
 
 void SDL3TextureManager::StretchBlt(DDImage* theDestImage, Image* theImage, const Rect& theDestRect, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, bool fastStretch)
@@ -247,21 +386,18 @@ void SDL3TextureManager::StretchBlt(DDImage* theDestImage, Image* theImage, cons
     SDL_FRect srcR = { (float)theSrcRect.mX, (float)theSrcRect.mY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
     SDL_FRect dstR = { (float)theDestRect.mX, (float)theDestRect.mY, (float)theDestRect.mWidth, (float)theDestRect.mHeight };
 
+    SDL_SetTextureScaleMode(aTex, fastStretch ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
+
     SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
     SDL_SetRenderClipRect(mRenderer, &clipRect);
-
-    if (fastStretch)
-        SDL_SetTextureScaleMode(aTex, SDL_SCALEMODE_NEAREST);
-    else
-        SDL_SetTextureScaleMode(aTex, SDL_SCALEMODE_LINEAR);
-
-    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
     SDL_RenderTexture(mRenderer, aTex, &srcR, &dstR);
-
     SDL_SetRenderClipRect(mRenderer, nullptr);
+    ResetColorMod(aTex);
 }
 
-void SDL3TextureManager::BltF(DDImage* theDestImage, Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect &theClipRect, const Color& theColor, int theDrawMode)
+void SDL3TextureManager::BltRotated(DDImage* theDestImage, Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, double theRot, float theRotCenterX, float theRotCenterY)
 {
     VerifyTarget(theDestImage);
     SDL_Texture* aTex = GetTextureForImage(theImage);
@@ -269,99 +405,16 @@ void SDL3TextureManager::BltF(DDImage* theDestImage, Image* theImage, float theX
 
     SDL_FRect srcR = { (float)theSrcRect.mX, (float)theSrcRect.mY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
     SDL_FRect dstR = { theX, theY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
-
-    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
-    SDL_SetRenderClipRect(mRenderer, &clipRect);
-
-    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
-    SDL_RenderTexture(mRenderer, aTex, &srcR, &dstR);
-
-    SDL_SetRenderClipRect(mRenderer, nullptr);
-}
-
-void SDL3TextureManager::BltRotated(DDImage* theDestImage, Image* theImage, float theX, float theY, const Rect &theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, double theRot, float theRotCenterX, float theRotCenterY)
-{
-    VerifyTarget(theDestImage);
-    SDL_Texture* aTex = GetTextureForImage(theImage);
-    if (!aTex) return;
-
-    SDL_FRect srcR = { (float)theSrcRect.mX, (float)theSrcRect.mY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
-    SDL_FRect dstR = { theX, theY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
-
-    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
-    SDL_SetRenderClipRect(mRenderer, &clipRect);
-
     SDL_FPoint center = { theRotCenterX, theRotCenterY };
 
     SetupBlendMode(theImage, aTex, theDrawMode, theColor);
-    SDL_RenderTextureRotated(mRenderer, aTex, &srcR, &dstR, theRot * (180.0 / SDL_PI_D), &center, SDL_FLIP_NONE);
-
-    SDL_SetRenderClipRect(mRenderer, nullptr);
-}
-
-void SDL3TextureManager::BltMatrix(DDImage* theDestImage, Image* theImage, float x, float y, const SexyMatrix3 &theMatrix, const Rect& theClipRect, const Color& theColor, int theDrawMode, const Rect &theSrcRect, bool blend)
-{
-    VerifyTarget(theDestImage);
-    SDL_Texture* aTex = GetTextureForImage(theImage);
-    if (!aTex) return;
+    SetupColorMod(aTex, theColor);
 
     SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
     SDL_SetRenderClipRect(mRenderer, &clipRect);
-
-    float w2 = theSrcRect.mWidth / 2.0f;
-    float h2 = theSrcRect.mHeight / 2.0f;
-
-    float u0 = (float)theSrcRect.mX / theImage->mWidth;
-    float u1 = (float)(theSrcRect.mX + theSrcRect.mWidth) / theImage->mWidth;
-    float v0 = (float)theSrcRect.mY / theImage->mHeight;
-    float v1 = (float)(theSrcRect.mY + theSrcRect.mHeight) / theImage->mHeight;
-
-    SDL_Vertex verts[4];
-    float u[] = { u0, u1, u0, u1 };
-    float v[] = { v0, v0, v1, v1 };
-    float px[] = { -w2, w2, -w2, w2 };
-    float py[] = { -h2, -h2, h2, h2 };
-
-    SDL_FColor rgba = { 
-        theColor.mRed / 255.0f, 
-        theColor.mGreen / 255.0f, 
-        theColor.mBlue / 255.0f, 
-        theColor.mAlpha / 255.0f 
-    };
-
-    for (int i = 0; i < 4; i++)
-    {
-        SexyVector3 vec(px[i], py[i], 1);
-        vec = theMatrix * vec;
-        verts[i].position.x = vec.x + x - 0.5f;
-        verts[i].position.y = vec.y + y - 0.5f;
-        verts[i].tex_coord.x = u[i];
-        verts[i].tex_coord.y = v[i];
-        verts[i].color = rgba;
-    }
-
-    int indices[6] = { 0, 1, 2, 1, 3, 2 };
-
-    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
-    SDL_RenderGeometry(mRenderer, aTex, verts, 4, indices, 6);
-
+    SDL_RenderTextureRotated(mRenderer, aTex, &srcR, &dstR, theRot * (180.0 / SDL_PI_D), &center, SDL_FLIP_NONE);
     SDL_SetRenderClipRect(mRenderer, nullptr);
-}
-
-void SDL3TextureManager::FillRect(DDImage* theDestImage, const Rect& theRect, const Color& theColor, int theDrawMode)
-{
-    VerifyTarget(theDestImage);
-
-    SDL_FRect dstR = { (float)theRect.mX, (float)theRect.mY, (float)theRect.mWidth, (float)theRect.mHeight };
-    
-    if (theDrawMode == Graphics::DRAWMODE_ADDITIVE)
-        SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_ADD);
-    else
-        SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
-
-    SDL_SetRenderDrawColor(mRenderer, theColor.mRed, theColor.mGreen, theColor.mBlue, theColor.mAlpha);
-    SDL_RenderFillRect(mRenderer, &dstR);
-    SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
+    ResetColorMod(aTex);
 }
 
 void SDL3TextureManager::BltMirror(DDImage* theDestImage, Image* theImage, int theX, int theY, const Rect& theSrcRect, const Color& theColor, int theDrawMode)
@@ -374,7 +427,9 @@ void SDL3TextureManager::BltMirror(DDImage* theDestImage, Image* theImage, int t
     SDL_FRect dstR = { (float)theX, (float)theY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
 
     SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
     SDL_RenderTextureRotated(mRenderer, aTex, &srcR, &dstR, 0, nullptr, SDL_FLIP_HORIZONTAL);
+    ResetColorMod(aTex);
 }
 
 void SDL3TextureManager::StretchBltMirror(DDImage* theDestImage, Image* theImage, const Rect& theDestRect, const Rect& theSrcRect, const Rect& theClipRect, const Color& theColor, int theDrawMode, bool fastStretch)
@@ -386,50 +441,63 @@ void SDL3TextureManager::StretchBltMirror(DDImage* theDestImage, Image* theImage
     SDL_FRect srcR = { (float)theSrcRect.mX, (float)theSrcRect.mY, (float)theSrcRect.mWidth, (float)theSrcRect.mHeight };
     SDL_FRect dstR = { (float)theDestRect.mX, (float)theDestRect.mY, (float)theDestRect.mWidth, (float)theDestRect.mHeight };
 
+    SDL_SetTextureScaleMode(aTex, fastStretch ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
+
     SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
     SDL_SetRenderClipRect(mRenderer, &clipRect);
-
-    if (fastStretch)
-        SDL_SetTextureScaleMode(aTex, SDL_SCALEMODE_NEAREST);
-    else
-        SDL_SetTextureScaleMode(aTex, SDL_SCALEMODE_LINEAR);
-
-    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
     SDL_RenderTextureRotated(mRenderer, aTex, &srcR, &dstR, 0, nullptr, SDL_FLIP_HORIZONTAL);
-
     SDL_SetRenderClipRect(mRenderer, nullptr);
+    ResetColorMod(aTex);
 }
 
-void SDL3TextureManager::DrawLine(DDImage* theDestImage, double theStartX, double theStartY, double theEndX, double theEndY, const Color& theColor, int theDrawMode)
+void SDL3TextureManager::BltMatrix(DDImage* theDestImage, Image* theImage, float x, float y, const SexyMatrix3& theMatrix, const Rect& theClipRect, const Color& theColor, int theDrawMode, const Rect& theSrcRect, bool blend)
 {
     VerifyTarget(theDestImage);
+    SDL_Texture* aTex = GetTextureForImage(theImage);
+    if (!aTex) return;
 
-    if (theDrawMode == Graphics::DRAWMODE_ADDITIVE)
-        SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_ADD);
-    else
-        SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
+    float w2 = theSrcRect.mWidth  / 2.0f;
+    float h2 = theSrcRect.mHeight / 2.0f;
 
-    SDL_SetRenderDrawColor(mRenderer, theColor.mRed, theColor.mGreen, theColor.mBlue, theColor.mAlpha);
-    SDL_RenderLine(mRenderer, (float)theStartX, (float)theStartY, (float)theEndX, (float)theEndY);
-    SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
-}
+    float u0 = (float)theSrcRect.mX / theImage->mWidth;
+    float u1 = (float)(theSrcRect.mX + theSrcRect.mWidth)  / theImage->mWidth;
+    float v0 = (float)theSrcRect.mY / theImage->mHeight;
+    float v1 = (float)(theSrcRect.mY + theSrcRect.mHeight) / theImage->mHeight;
 
-void SDL3TextureManager::FlushFrame(ulong* theBits, int theWidth, int theHeight)
-{
-    if (!mRenderer || !theBits || theWidth <= 0 || theHeight <= 0) return;
+    SDL_Vertex verts[4];
+    float us[] = { u0, u1, u0, u1 };
+    float vs[] = { v0, v0, v1, v1 };
+    float px[] = { -w2,  w2, -w2, w2 };
+    float py[] = { -h2, -h2,  h2, h2 };
 
-    if (!mStreamTex) {
-        mStreamTex = SDL_CreateTexture(mRenderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, theWidth, theHeight);
-        SDL_SetTextureBlendMode(mStreamTex, SDL_BLENDMODE_BLEND);
+    // Modulate vertex colors by the global color tint
+    SDL_FColor tint = { theColor.mRed / 255.0f, theColor.mGreen / 255.0f, theColor.mBlue / 255.0f, theColor.mAlpha / 255.0f };
+
+    for (int i = 0; i < 4; i++)
+    {
+        SexyVector3 vec(px[i], py[i], 1);
+        vec = theMatrix * vec;
+        verts[i].position.x  = vec.x + x;
+        verts[i].position.y  = vec.y + y;
+        verts[i].tex_coord.x = us[i];
+        verts[i].tex_coord.y = vs[i];
+        verts[i].color       = tint;
     }
-    
-    SDL_UpdateTexture(mStreamTex, nullptr, theBits, theWidth * sizeof(ulong));
 
-    SDL_SetRenderTarget(mRenderer, nullptr);
-    SDL_SetRenderDrawColor(mRenderer, 0, 0, 0, 255);
-    SDL_RenderClear(mRenderer);
-    SDL_RenderTexture(mRenderer, mStreamTex, nullptr, nullptr);
-    SDL_RenderPresent(mRenderer);
+    int indices[6] = { 0, 1, 2, 1, 3, 2 };
+
+    SetupBlendMode(theImage, aTex, theDrawMode, theColor);
+    // SDL_SetTextureColorMod is often ignored in RenderGeometry, so vertex color is the primary tint
+    SDL_SetTextureColorMod(aTex, 255, 255, 255); 
+    SDL_SetTextureAlphaMod(aTex, 255);
+
+    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
+    SDL_SetRenderClipRect(mRenderer, &clipRect);
+    SDL_RenderGeometry(mRenderer, aTex, verts, 4, indices, 6);
+    SDL_SetRenderClipRect(mRenderer, nullptr);
+    ResetColorMod(aTex);
 }
 
 void SDL3TextureManager::BltTrianglesTex(DDImage* theDestImage, Image* theTexture, const TriVertex theVertices[][3], int theNumTriangles, const Rect& theClipRect, const Color& theColor, int theDrawMode, float tx, float ty, bool blend)
@@ -438,48 +506,69 @@ void SDL3TextureManager::BltTrianglesTex(DDImage* theDestImage, Image* theTextur
     SDL_Texture* aTex = GetTextureForImage(theTexture);
     if (!aTex || theNumTriangles <= 0) return;
 
-    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
-    SDL_SetRenderClipRect(mRenderer, &clipRect);
-
     int totalVerts = theNumTriangles * 3;
     std::vector<SDL_Vertex> sdlVerts(totalVerts);
     std::vector<int> indices(totalVerts);
-
-    float rMod = theColor.mRed / 255.0f;
-    float gMod = theColor.mGreen / 255.0f;
-    float bMod = theColor.mBlue / 255.0f;
-    float aMod = theColor.mAlpha / 255.0f;
 
     for (int i = 0; i < theNumTriangles; i++)
     {
         for (int v = 0; v < 3; v++)
         {
-            const TriVertex& vert = theVertices[i][v];
+        const TriVertex& vert = theVertices[i][v];
             int idx = i * 3 + v;
-            sdlVerts[idx].position.x = vert.x + tx;
-            sdlVerts[idx].position.y = vert.y + ty;
+            sdlVerts[idx].position.x  = vert.x + tx;
+            sdlVerts[idx].position.y  = vert.y + ty;
             sdlVerts[idx].tex_coord.x = vert.u;
             sdlVerts[idx].tex_coord.y = vert.v;
 
-            if (vert.color == 0xFFFFFFFF || vert.color == 0)
-            {
-                sdlVerts[idx].color.r = rMod;
-                sdlVerts[idx].color.g = gMod;
-                sdlVerts[idx].color.b = bMod;
-                sdlVerts[idx].color.a = aMod;
-            }
+            // TriVertex.color == 0 means "use the color from the function call" (theColor).
+            // When color != 0, we multiply it by theColor tint.
+            float r, g, b, a;
+            if (vert.color == 0) { r = 1.0f; g = 1.0f; b = 1.0f; a = 1.0f; }
             else
             {
-                sdlVerts[idx].color.a = (((vert.color >> 24) & 0xFF) / 255.0f) * aMod;
-                sdlVerts[idx].color.r = (((vert.color >> 16) & 0xFF) / 255.0f) * rMod;
-                sdlVerts[idx].color.g = (((vert.color >> 8) & 0xFF) / 255.0f) * gMod;
-                sdlVerts[idx].color.b = ((vert.color & 0xFF) / 255.0f) * bMod;
+                r = ((vert.color >> 16) & 0xFF) / 255.0f;
+                g = ((vert.color >>  8) & 0xFF) / 255.0f;
+                b = ( vert.color        & 0xFF) / 255.0f;
+                a = ((vert.color >> 24) & 0xFF) / 255.0f;
             }
+
+            sdlVerts[idx].color.r = r * (theColor.mRed / 255.0f);
+            sdlVerts[idx].color.g = g * (theColor.mGreen / 255.0f);
+            sdlVerts[idx].color.b = b * (theColor.mBlue / 255.0f);
+            sdlVerts[idx].color.a = a * (theColor.mAlpha / 255.0f);
             indices[idx] = idx;
         }
     }
 
     SetupBlendMode(theTexture, aTex, theDrawMode, theColor);
+    SetupColorMod(aTex, theColor);
+
+    SDL_Rect clipRect = { theClipRect.mX, theClipRect.mY, theClipRect.mWidth, theClipRect.mHeight };
+    SDL_SetRenderClipRect(mRenderer, &clipRect);
     SDL_RenderGeometry(mRenderer, aTex, sdlVerts.data(), totalVerts, indices.data(), totalVerts);
     SDL_SetRenderClipRect(mRenderer, nullptr);
+    ResetColorMod(aTex);
+}
+
+void SDL3TextureManager::FillRect(DDImage* theDestImage, const Rect& theRect, const Color& theColor, int theDrawMode)
+{
+    VerifyTarget(theDestImage);
+
+    SDL_FRect dstR = { (float)theRect.mX, (float)theRect.mY, (float)theRect.mWidth, (float)theRect.mHeight };
+
+    SDL_SetRenderDrawBlendMode(mRenderer, theDrawMode == Graphics::DRAWMODE_ADDITIVE ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(mRenderer, (Uint8)theColor.mRed, (Uint8)theColor.mGreen, (Uint8)theColor.mBlue, (Uint8)theColor.mAlpha);
+    SDL_RenderFillRect(mRenderer, &dstR);
+    SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
+}
+
+void SDL3TextureManager::DrawLine(DDImage* theDestImage, double theStartX, double theStartY, double theEndX, double theEndY, const Color& theColor, int theDrawMode)
+{
+    VerifyTarget(theDestImage);
+
+    SDL_SetRenderDrawBlendMode(mRenderer, theDrawMode == Graphics::DRAWMODE_ADDITIVE ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(mRenderer, (Uint8)theColor.mRed, (Uint8)theColor.mGreen, (Uint8)theColor.mBlue, (Uint8)theColor.mAlpha);
+    SDL_RenderLine(mRenderer, (float)theStartX, (float)theStartY, (float)theEndX, (float)theEndY);
+    SDL_SetRenderDrawBlendMode(mRenderer, SDL_BLENDMODE_BLEND);
 }

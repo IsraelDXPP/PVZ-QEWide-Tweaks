@@ -124,7 +124,7 @@ LawnApp::LawnApp()
 	mAutoStartLoadingThread = false;
 	mDebugKeysEnabled = false;
 	mIsFastMode = false;
-	mVersion = "wide-v4.4";
+	mVersion = "wide-v4.3";
 	mReconVersion = "QETweaks " + mVersion;
 	mTitle = _S("Plants vs. Zombies: QEWide-Tweaks " + mVersion);
 	mCustomCursorsEnabled = false;

@@ -66,6 +66,7 @@ public:
     void Cleanup();
     void EndFrame();
     void FlushFrame(ulong* theBits, int theWidth, int theHeight); // Software mode fallback
+    void Present();  // Swap backbuffer to screen (call after overlays)
 };
 
 } // namespace Sexy

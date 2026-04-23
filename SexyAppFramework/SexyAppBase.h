@@ -1,6 +1,8 @@
 #ifndef __SEXYAPPBASE_H__
 #define __SEXYAPPBASE_H__
 
+struct SDL_Cursor;  // Forward declaration for SDL3 cursor type
+
 #include "Common.h"
 #include "Rect.h"
 #include "Color.h"
@@ -188,6 +190,8 @@ namespace Sexy
 		std::string				mProductVersion;
 		Image* mCursorImages[NUM_CURSORS];
 		HCURSOR					mOverrideCursor;
+		SDL_Cursor*				mSDLCursors[NUM_CURSORS];	// SDL3 cursor objects for each cursor type
+		SDL_Cursor*				mSDLBlankCursor;			// Transparent cursor for hidden state
 		bool					mIsOpeningURL;
 		bool					mShutdownOnURLOpen;
 		std::string				mOpeningURL;
@@ -296,6 +300,7 @@ namespace Sexy
 		bool					mEnableMaximizeButton;
 		bool					mCtrlDown;
 		bool					mAltDown;
+		bool					mShiftDown;
 
 		int						mSyncRefreshRate;
 		bool					mVSyncUpdates;
@@ -350,11 +355,11 @@ namespace Sexy
 		uint					mZylomGameId;
 #endif
 
-		LONG					mOldWndProc;
-
 	protected:
 		void					RehupFocus();
 		void					ClearKeysDown();
+		void					InitSDLCursors();
+		void					CleanupSDLCursors();
 		bool					ProcessDeferredMessages(bool singleMessage);
 		void					UpdateFTimeAcc();
 		virtual bool			Process(bool allowSleep = true);

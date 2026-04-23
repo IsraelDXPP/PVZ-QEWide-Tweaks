@@ -102,7 +102,7 @@ void SDL3TextureManager::EndFrame()
         SDL_RenderTexture(mRenderer, screenTex, nullptr, nullptr);
     }
 
-    SDL_RenderPresent(mRenderer);
+    // NOTE: Do NOT call SDL_RenderPresent here — overlays (FPS, cursor) are drawn after this
     mRenderTarget = nullptr;
 }
 
@@ -130,6 +130,12 @@ void SDL3TextureManager::FlushFrame(ulong* theBits, int theWidth, int theHeight)
     SDL_SetRenderDrawColor(mRenderer, 0, 0, 0, 255);
     SDL_RenderClear(mRenderer);
     SDL_RenderTexture(mRenderer, mStreamTex, nullptr, nullptr);
+    // NOTE: Do NOT call SDL_RenderPresent here — overlays (FPS, cursor) are drawn after this
+}
+
+void SDL3TextureManager::Present()
+{
+    if (!mRenderer) return;
     SDL_RenderPresent(mRenderer);
 }
 

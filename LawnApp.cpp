@@ -3368,81 +3368,99 @@ void LawnApp::PreloadForUser()
 
 void LawnApp::EnforceCursor()
 {
+	mCustomCursorsEnabled = mCustomCursor;
+
 	if (mSEHOccured || !mMouseIn)
 	{
-		::SetCursor(LoadCursor(NULL, IDC_ARROW));
+		// Show default arrow cursor when inactive or mouse outside
+		if (mSDLCursors[CURSOR_POINTER])
+			SDL_SetCursor(mSDLCursors[CURSOR_POINTER]);
+		SDL_ShowCursor();
 		return;
 	}
 
 	if (mCustomCursor)
 	{
+		// Custom game cursor: hide OS cursor so only game-drawn cursor shows
+		if (mSDLBlankCursor)
+			SDL_SetCursor(mSDLBlankCursor);
+		SDL_HideCursor();
+#ifdef WIN32
 		::SetCursor(NULL);
+#endif
 		return;
 	}
+
+	// System cursor mode: use SDL3 cursor API so SDL3's WM_SETCURSOR handler
+	// uses our chosen cursor instead of overriding with the default arrow.
+	SDL_Cursor* sdlCursor = NULL;
 
 	if (mOverrideCursor)
 	{
-		::SetCursor(mOverrideCursor);
-		return;
+		// Override cursor is always a hand variant
+		sdlCursor = mSDLCursors[CURSOR_HAND];
+	}
+	else
+	{
+		switch (mCursorNum)
+		{
+		case CURSOR_POINTER:
+			sdlCursor = mSDLCursors[CURSOR_POINTER];
+			break;
+		case CURSOR_HAND:
+			sdlCursor = mSDLCursors[CURSOR_HAND];
+			break;
+		case CURSOR_TEXT:
+			sdlCursor = mSDLCursors[CURSOR_TEXT];
+			break;
+		case CURSOR_DRAGGING:
+			sdlCursor = mSDLCursors[CURSOR_DRAGGING];
+			break;
+		case CURSOR_CIRCLE_SLASH:
+			sdlCursor = mSDLCursors[CURSOR_CIRCLE_SLASH];
+			break;
+		case CURSOR_SIZEALL:
+			sdlCursor = mSDLCursors[CURSOR_SIZEALL];
+			break;
+		case CURSOR_SIZENESW:
+			sdlCursor = mSDLCursors[CURSOR_SIZENESW];
+			break;
+		case CURSOR_SIZENS:
+			sdlCursor = mSDLCursors[CURSOR_SIZENS];
+			break;
+		case CURSOR_SIZENWSE:
+			sdlCursor = mSDLCursors[CURSOR_SIZENWSE];
+			break;
+		case CURSOR_SIZEWE:
+			sdlCursor = mSDLCursors[CURSOR_SIZEWE];
+			break;
+		case CURSOR_WAIT:
+			sdlCursor = mSDLCursors[CURSOR_WAIT];
+			break;
+		case CURSOR_CUSTOM:
+		case CURSOR_NONE:
+			// Hide OS cursor completely
+			if (mSDLBlankCursor)
+				SDL_SetCursor(mSDLBlankCursor);
+			SDL_HideCursor();
+			return;
+
+		default:
+			sdlCursor = mSDLCursors[CURSOR_POINTER];
+			break;
+		}
 	}
 
-	switch (mCursorNum)
+	if (sdlCursor)
 	{
-	case CURSOR_POINTER:
-		::SetCursor(LoadCursor(GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_CURSOR1)));
-		return;
-
-	case CURSOR_HAND:
-		::SetCursor(mHandCursor);
-		return;
-
-	case CURSOR_TEXT:
-		::SetCursor(LoadCursor(NULL, IDC_IBEAM));
-		return;
-
-	case CURSOR_DRAGGING:
-		::SetCursor(mDraggingCursor);
-		return;
-
-	case CURSOR_CIRCLE_SLASH:
-		::SetCursor(LoadCursor(NULL, IDC_NO));
-		return;
-
-	case CURSOR_SIZEALL:
-		::SetCursor(LoadCursor(NULL, IDC_SIZEALL));
-		return;
-
-	case CURSOR_SIZENESW:
-		::SetCursor(LoadCursor(NULL, IDC_SIZENESW));
-		return;
-
-	case CURSOR_SIZENS:
-		::SetCursor(LoadCursor(NULL, IDC_SIZENS));
-		return;
-
-	case CURSOR_SIZENWSE:
-		::SetCursor(LoadCursor(NULL, IDC_SIZENWSE));
-		return;
-
-	case CURSOR_SIZEWE:
-		::SetCursor(LoadCursor(NULL, IDC_SIZEWE));
-		return;
-
-	case CURSOR_WAIT:
-		::SetCursor(LoadCursor(NULL, IDC_WAIT));
-		return;
-
-	case CURSOR_CUSTOM:
-		::SetCursor(NULL);
-		return;
-
-	case CURSOR_NONE:
-		::SetCursor(NULL);
-		return;
-
-	default:
-		::SetCursor(LoadCursor(NULL, IDC_ARROW));
-		return;
+		SDL_SetCursor(sdlCursor);
+		SDL_ShowCursor();
+	}
+	else
+	{
+		if (mSDLBlankCursor)
+			SDL_SetCursor(mSDLBlankCursor);
+		SDL_HideCursor();
 	}
 }
 

@@ -129,6 +129,7 @@ unsigned char gDraggingCursorData[] = {
 	0x00
 };
 static DDImage* gFPSImage = NULL;
+static DDImage* gDemoTimeLeftImage = NULL;  // Forward declaration (also defined in Demo TimeLeft section)
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -246,6 +247,8 @@ SexyAppBase::SexyAppBase()
 	mCustomCursorsEnabled = false;
 	mCustomCursorDirty = false;
 	mOverrideCursor = NULL;
+	memset(mSDLCursors, 0, sizeof(mSDLCursors));
+	mSDLBlankCursor = NULL;
 	mIsOpeningURL = false;
 	mInitialized = false;
 	mLastShutdownWasGraceful = true;
@@ -254,6 +257,7 @@ SexyAppBase::SexyAppBase()
 	mSkipSignatureChecks = false;
 	mCtrlDown = false;
 	mAltDown = false;
+	mShiftDown = false;
 	mStepMode = 0;
 	mCleanupSharedImages = false;
 	mStandardWordWrap = true;
@@ -280,7 +284,6 @@ SexyAppBase::SexyAppBase()
 	mScreenBltTime = 0;
 	mAlphaDisabled = false;
 	mDebugKeysEnabled = false;
-	mOldWndProc = 0;
 	mNoSoundNeeded = false;
 	mWantFMod = false;
 
@@ -2243,6 +2246,7 @@ void SexyAppBase::Shutdown()
 
 		ImageLib::CloseJPEG2000();
 
+		CleanupSDLCursors();
 		SDL_DestroyRenderer(LawnApp::mSDLRenderer);
 		SDL_DestroyWindow(LawnApp::mSDLWindow);
 		SDL_Quit();
@@ -2349,7 +2353,7 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 	if (mShutdown || !LawnApp::mSDLRenderer || !LawnApp::mSDLWindow)
 		return;
 
-	// Ensure the screen image exists and widgets have a valid render target
+	// Ensure the screen image exists
 	Image* aScreenImage = mDDInterface->GetScreenImage();
 	if (aScreenImage == nullptr)
 		return;
@@ -2358,12 +2362,10 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 	if (aMemImage == nullptr)
 		return;
 
-	if (mWidgetManager->mImage != aScreenImage)
-		mWidgetManager->mImage = aMemImage;
+	// NOTE: Do NOT call DrawScreen() here — it's already called in DrawDirtyStuff().
+	// Calling it twice per frame causes double-render and breaks VSync timing.
 
-	// Fallback/Update Screen Surface Sync
-	// In hardware mode, the render happens independently during each graphic Draw call.
-	// In software mode, mBits contains the whole CPU composite memory, so we upload it.
+	// Composite screen to SDL backbuffer (but do NOT present yet)
 	if (Is3DAccelerated())
 	{
 		SDL3TextureManager::Instance().EndFrame();
@@ -2374,12 +2376,68 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 		if (aMemImage->GetBits() == nullptr)
 			return;
 
+		// Draw software cursor into the CPU buffer before uploading
+		if (mDDInterface->mCursorImage != nullptr && (mCustomCursorsEnabled || mPlayingDemoBuffer))
+		{
+			Graphics g(aMemImage);
+			g.DrawImage(mDDInterface->mCursorImage, mDDInterface->mCursorX, mDDInterface->mCursorY);
+		}
+
 		SDL3TextureManager::Instance().FlushFrame(
-			aMemImage->GetBits(), 
-			aMemImage->GetWidth(), 
+			aMemImage->GetBits(),
+			aMemImage->GetWidth(),
 			aMemImage->GetHeight()
 		);
 	}
+
+	// --- Draw overlays directly to the SDL backbuffer (after composite, before present) ---
+
+	// Draw software cursor overlay in 3D accelerated mode
+	if (Is3DAccelerated())
+	{
+		if (mDDInterface->mCursorImage != nullptr && (mCustomCursorsEnabled || mPlayingDemoBuffer))
+		{
+			SDL_Texture* aTex = (SDL_Texture*)SDL3TextureManager::Instance().GetTextureForImage(mDDInterface->mCursorImage);
+			if (aTex)
+			{
+				SDL_FRect aDest = { (float)mDDInterface->mCursorX, (float)mDDInterface->mCursorY,
+					(float)mDDInterface->mCursorImage->mWidth, (float)mDDInterface->mCursorImage->mHeight };
+				SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_BLEND);
+				SDL_RenderTexture(LawnApp::mSDLRenderer, aTex, NULL, &aDest);
+			}
+		}
+	}
+
+	// Draw FPS overlay
+	if (mShowFPS && gFPSImage)
+	{
+		SDL_Texture* aTex = (SDL_Texture*)SDL3TextureManager::Instance().GetTextureForImage(gFPSImage);
+		if (aTex)
+		{
+			SDL_FRect aDest = { (float)(mWidth - gFPSImage->GetWidth() - 10), (float)(mHeight - gFPSImage->GetHeight() - 10),
+				(float)gFPSImage->GetWidth(), (float)gFPSImage->GetHeight() };
+			SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_BLEND);
+			SDL_RenderTexture(LawnApp::mSDLRenderer, aTex, NULL, &aDest);
+		}
+	}
+
+	// Draw demo time left overlay
+	if (mPlayingDemoBuffer && gDemoTimeLeftImage)
+	{
+		SDL_Texture* aTex = (SDL_Texture*)SDL3TextureManager::Instance().GetTextureForImage(gDemoTimeLeftImage);
+		if (aTex)
+		{
+			int yPos = mHeight - gFPSImage->GetHeight() - gDemoTimeLeftImage->GetHeight() - 15;
+			SDL_FRect aDest = { (float)(mWidth - gDemoTimeLeftImage->GetWidth() - 10), (float)yPos,
+				(float)gDemoTimeLeftImage->GetWidth(), (float)gDemoTimeLeftImage->GetHeight() };
+			SDL_SetTextureBlendMode(aTex, SDL_BLENDMODE_BLEND);
+			SDL_RenderTexture(LawnApp::mSDLRenderer, aTex, NULL, &aDest);
+		}
+	}
+
+	// Now present the backbuffer with all overlays — SDL_RenderPresent will block
+	// until the next VBlank when VSync is enabled, capping to the display refresh rate.
+	SDL3TextureManager::Instance().Present();
 
 	mWidgetManager->mDirty = false;
 	mFPSDirtyCount = 0;
@@ -2456,7 +2514,7 @@ static void FPSDrawCoords(int theX, int theY)
 }
 
 ///////////////////////////// Demo TimeLeft Stuff
-static DDImage* gDemoTimeLeftImage = NULL;
+// gDemoTimeLeftImage is declared at file scope near gFPSImage
 static void CalculateDemoTimeLeft()
 {
 	static SysFont aFont(gSexyAppBase, "Tahoma", 8);
@@ -2678,14 +2736,11 @@ bool SexyAppBase::DrawDirtyStuff()
 		if (drewScreen)
 			mDrawTime += aMidTime - aStartTime;
 
-		if (mShowFPS && drewScreen)
+		if (mShowFPS)
 		{
-			Graphics g(mDDInterface->GetScreenImage());
-			if (gFPSImage)
-				g.DrawImage(gFPSImage, mWidth - gFPSImage->GetWidth() - 10, mHeight - gFPSImage->GetHeight() - 10);
-
-			if (mPlayingDemoBuffer && gDemoTimeLeftImage)
-				g.DrawImage(gDemoTimeLeftImage, mWidth - gDemoTimeLeftImage->GetWidth() - 10, mHeight - gFPSImage->GetHeight() - gDemoTimeLeftImage->GetHeight() - 15);
+			// Calculate FPS values (actual rendering is done in Redraw() after compositing)
+			if (mShowFPSMode == FPS_ShowFPS)
+				CalculateFPS();
 		}
 
 		if (mWaitForVSync && mIsPhysWindowed && mSoftVSyncWait && drewScreen)
@@ -3411,14 +3466,15 @@ static bool ScreenSaverWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 
 LRESULT CALLBACK SexyAppBase::WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	SexyAppBase* aSexyApp = (SexyAppBase*)GetWindowLong(hWnd, GWL_USERDATA);
+
+	// SDL3 manages its own WndProc - we only handle messages for non-SDL3 windows (screen saver, etc.)
 	if (gSexyAppBase != NULL && gSexyAppBase->IsScreenSaver())
 	{
 		LRESULT aResult;
 		if (ScreenSaverWindowProc(hWnd, uMsg, wParam, lParam, aResult))
 			return aResult;
 	}
-
-	SexyAppBase* aSexyApp = (SexyAppBase*)GetWindowLong(hWnd, GWL_USERDATA);
 	switch (uMsg)
 	{
 		//  TODO: switch to killfocus/setfocus?
@@ -3956,6 +4012,7 @@ void SexyAppBase::RehupFocus()
 			LostFocus();
 
 			ReleaseCapture();
+			SDL_CaptureMouse(false);
 			mWidgetManager->DoMouseUps();
 		}
 	}
@@ -4203,7 +4260,7 @@ void SexyAppBase::ShowFPS(bool show)
 
 bool SexyAppBase::DebugKeyDown(int theKey)
 {
-	if ((theKey == 'R') && (mWidgetManager->mKeyDown[KEYCODE_MENU]))
+	if ((theKey == 'R') && mAltDown)
 	{
 #ifndef RELEASEFINAL
 		if (ReparseModValues())
@@ -4215,9 +4272,9 @@ bool SexyAppBase::DebugKeyDown(int theKey)
 		}
 #endif
 	}
-	else if (theKey == VK_F3)
+	else if (theKey == KEYCODE_F3)
 	{
-		if (mWidgetManager->mKeyDown[KEYCODE_SHIFT])
+		if (mShiftDown)
 		{
 			if (++mShowFPSMode >= Num_FPS_Types)
 				mShowFPSMode = 0;
@@ -4226,9 +4283,9 @@ bool SexyAppBase::DebugKeyDown(int theKey)
 		else
 			ShowFPS(!mShowFPS);
 	}
-	else if (theKey == VK_F8)
+	else if (theKey == KEYCODE_F8)
 	{
-		if (mWidgetManager->mKeyDown[KEYCODE_SHIFT])
+		if (mShiftDown)
 		{
 			Set3DAcclerated(!Is3DAccelerated());
 
@@ -4242,17 +4299,17 @@ bool SexyAppBase::DebugKeyDown(int theKey)
 
 		return true;
 	}
-	else if (theKey == VK_F10)
+	else if (theKey == KEYCODE_F10)
 	{
 #ifndef RELEASEFINAL
-		if (mWidgetManager->mKeyDown[KEYCODE_CONTROL])
+		if (mCtrlDown)
 		{
 			if (mUpdateMultiplier == 0.25)
 				mUpdateMultiplier = 1.0;
 			else
 				mUpdateMultiplier = 0.25;
 		}
-		else if (mWidgetManager->mKeyDown[KEYCODE_SHIFT])
+		else if (mShiftDown)
 		{
 			mStepMode = 0;
 			ClearUpdateBacklog();
@@ -4263,21 +4320,20 @@ bool SexyAppBase::DebugKeyDown(int theKey)
 
 		return true;
 	}
-	else if (theKey == VK_F11)
+	else if (theKey == KEYCODE_F11)
 	{
-		if (mWidgetManager->mKeyDown[KEYCODE_SHIFT])
+		if (mShiftDown)
 			DumpProgramInfo();
 		else
 			TakeScreenshot();
 
 		return true;
 	}
-	else if (theKey == VK_F2)
+	else if (theKey == KEYCODE_F2)
 	{
 		bool isPerfOn = !SexyPerf::IsPerfOn();
 		if (isPerfOn)
 		{
-			//			MsgBox("Perf Monitoring: ON", "Perf Monitoring", MB_OK);
 			ClearUpdateBacklog();
 			SexyPerf::BeginPerf();
 		}
@@ -4997,12 +5053,9 @@ void SexyAppBase::CursorThreadProcStub(void* theArg)
 
 void SexyAppBase::StartCursorThread()
 {
-	if (!mCursorThreadRunning)
-	{
-		mCursorThreadRunning = true;
-		::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-		_beginthread(CursorThreadProcStub, 0, this);
-	}
+	// Cursor thread is disabled in SDL3 branch to prevent input conflicts and scaling issues.
+	// Software cursors are now drawn directly in SexyAppBase::Redraw.
+	mCursorThreadRunning = false;
 }
 
 void SexyAppBase::SwitchScreenMode(bool wantWindowed, bool is3d, bool force)
@@ -5074,6 +5127,50 @@ void SexyAppBase::SetAlphaDisabled(bool isDisabled)
 	}
 }
 
+void SexyAppBase::InitSDLCursors()
+{
+	// Create SDL system cursors matching each cursor type
+	memset(mSDLCursors, 0, sizeof(mSDLCursors));
+
+	mSDLCursors[CURSOR_POINTER]     = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+	mSDLCursors[CURSOR_HAND]        = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+	mSDLCursors[CURSOR_DRAGGING]    = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_MOVE);
+	mSDLCursors[CURSOR_TEXT]        = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+	mSDLCursors[CURSOR_CIRCLE_SLASH] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NOT_ALLOWED);
+	mSDLCursors[CURSOR_SIZEALL]     = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_MOVE);
+	mSDLCursors[CURSOR_SIZENS]      = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+	mSDLCursors[CURSOR_SIZEWE]      = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+	mSDLCursors[CURSOR_WAIT]        = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT);
+	// CURSOR_NONE and CURSOR_CUSTOM: no system cursor, will hide via SDL_HideCursor()
+
+	// Create a 1x1 transparent cursor for hiding the OS cursor (CURSOR_NONE, CURSOR_CUSTOM)
+	SDL_Surface* blankSurf = SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_ARGB8888);
+	if (blankSurf)
+	{
+		// Zero-fill = fully transparent pixel
+		SDL_memset(blankSurf->pixels, 0, blankSurf->pitch * blankSurf->h);
+		mSDLBlankCursor = SDL_CreateColorCursor(blankSurf, 0, 0);
+		SDL_DestroySurface(blankSurf);
+	}
+}
+
+void SexyAppBase::CleanupSDLCursors()
+{
+	for (int i = 0; i < NUM_CURSORS; i++)
+	{
+		if (mSDLCursors[i])
+		{
+			SDL_DestroyCursor(mSDLCursors[i]);
+			mSDLCursors[i] = NULL;
+		}
+	}
+	if (mSDLBlankCursor)
+	{
+		SDL_DestroyCursor(mSDLBlankCursor);
+		mSDLBlankCursor = NULL;
+	}
+}
+
 void SexyAppBase::EnforceCursor()
 {
 	bool wantSysCursor = true;
@@ -5081,9 +5178,12 @@ void SexyAppBase::EnforceCursor()
 	if (mDDInterface == NULL)
 		return;
 
-	if ((mSEHOccured) || (!mMouseIn))
+	if ((mSEHOccured) || (!mMouseIn) || (!mActive))
 	{
-		::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+		// Show default system cursor when inactive/outside window
+		if (mSDLCursors[CURSOR_POINTER])
+			SDL_SetCursor(mSDLCursors[CURSOR_POINTER]);
+		SDL_ShowCursor();
 		if (mDDInterface->SetCursorImage(NULL))
 			mCustomCursorDirty = true;
 	}
@@ -5092,73 +5192,27 @@ void SexyAppBase::EnforceCursor()
 		if ((mCursorImages[mCursorNum] == NULL) ||
 			((!mPlayingDemoBuffer) && (!mCustomCursorsEnabled) && (mCursorNum != CURSOR_CUSTOM)))
 		{
-			if (mOverrideCursor != NULL)
-				::SetCursor(mOverrideCursor);
-			else if (mCursorNum == CURSOR_POINTER)
-				::SetCursor(::LoadCursor(NULL, IDC_ARROW));
-			else if (mCursorNum == CURSOR_HAND)
-				::SetCursor(mHandCursor);
-			else if (mCursorNum == CURSOR_TEXT)
-				::SetCursor(::LoadCursor(NULL, IDC_IBEAM));
-			else if (mCursorNum == CURSOR_DRAGGING)
-				::SetCursor(mDraggingCursor);
-			else if (mCursorNum == CURSOR_CIRCLE_SLASH)
-				::SetCursor(::LoadCursor(NULL, IDC_NO));
-			else if (mCursorNum == CURSOR_SIZEALL)
-				::SetCursor(::LoadCursor(NULL, IDC_SIZEALL));
-			else if (mCursorNum == CURSOR_SIZENESW)
-				::SetCursor(::LoadCursor(NULL, IDC_SIZENESW));
-			else if (mCursorNum == CURSOR_SIZENS)
-				::SetCursor(::LoadCursor(NULL, IDC_SIZENS));
-			else if (mCursorNum == CURSOR_SIZENWSE)
-				::SetCursor(::LoadCursor(NULL, IDC_SIZENWSE));
-			else if (mCursorNum == CURSOR_SIZEWE)
-				::SetCursor(::LoadCursor(NULL, IDC_SIZEWE));
-			else if (mCursorNum == CURSOR_WAIT)
-				::SetCursor(::LoadCursor(NULL, IDC_WAIT));
-			else if (mCursorNum == CURSOR_CUSTOM)
-				::SetCursor(NULL); // Default to not showing anything
-			else if (mCursorNum == CURSOR_NONE)
-				::SetCursor(NULL);
-			else
-				::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+			// Use SDL system cursor for standard cursor types
+			SDL_Cursor* sdlCursor = nullptr;
+			if (mCursorNum >= 0 && mCursorNum < NUM_CURSORS)
+				sdlCursor = mSDLCursors[mCursorNum];
+			if (!sdlCursor)
+				sdlCursor = mSDLCursors[CURSOR_POINTER];
 
+			if (sdlCursor)
+			{
+				SDL_SetCursor(sdlCursor);
+				SDL_ShowCursor();
+			}
 			if (mDDInterface->SetCursorImage(NULL))
 				mCustomCursorDirty = true;
 		}
 		else
 		{
+			// Custom cursor image - hide system cursor, draw software cursor in Redraw()
 			if (mDDInterface->SetCursorImage(mCursorImages[mCursorNum]))
 				mCustomCursorDirty = true;
-
-			if (!mPlayingDemoBuffer)
-			{
-				::SetCursor(NULL);
-			}
-			else
-			{
-				// Give the NO cursor in the client area and an arrow on the title bar
-
-				POINT aULCorner = { 0, 0 };
-				::ClientToScreen(mHWnd, &aULCorner);
-
-				POINT aBRCorner = { mWidth, mHeight };
-				::ClientToScreen(mHWnd, &aBRCorner);
-
-				POINT aPoint;
-				::GetCursorPos(&aPoint);
-
-				if ((aPoint.x >= aULCorner.x) && (aPoint.y >= aULCorner.y) &&
-					(aPoint.x < aBRCorner.x) && (aPoint.y < aBRCorner.y))
-				{
-					::SetCursor(::LoadCursor(NULL, IDC_NO));
-				}
-				else
-				{
-					::SetCursor(::LoadCursor(NULL, IDC_ARROW));
-				}
-			}
-
+			SDL_HideCursor();
 			wantSysCursor = false;
 		}
 	}
@@ -5166,10 +5220,6 @@ void SexyAppBase::EnforceCursor()
 	if (wantSysCursor != mSysCursor)
 	{
 		mSysCursor = wantSysCursor;
-
-		// Don't hide the hardware cursor when playing back a demo buffer
-//		if (!mPlayingDemoBuffer)
-//			::ShowCursor(mSysCursor);
 	}
 }
 
@@ -5555,87 +5605,256 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 				mShutdown = true;
 				break;
 			case SDL_EVENT_MOUSE_MOTION:
-			{
-				int aWinW, aWinH;
-				SDL_GetWindowSize(LawnApp::mSDLWindow, &aWinW, &aWinH);
-				int x = (int)(event.motion.x * mWidth / aWinW);
-				int y = (int)(event.motion.y * mHeight / aWinH);
-				mLastUserInputTick = mLastTimerTime;
-				mWidgetManager->MouseMove(x, y);
-				break;
-			}
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			case SDL_EVENT_MOUSE_BUTTON_UP:
-			{
-				int aWinW, aWinH;
-				SDL_GetWindowSize(LawnApp::mSDLWindow, &aWinW, &aWinH);
-				int x = (int)(event.button.x * mWidth / aWinW);
-				int y = (int)(event.button.y * mHeight / aWinH);
-				int aBtn = (event.button.button == SDL_BUTTON_LEFT) ? 1 : 
-				           (event.button.button == SDL_BUTTON_RIGHT) ? -1 : 3;
-				mLastUserInputTick = mLastTimerTime;
-				if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+			case SDL_EVENT_MOUSE_WHEEL:
 				{
-					if (event.button.clicks == 2) aBtn *= 2;
-					mWidgetManager->MouseDown(x, y, aBtn);
+					// Manual coordinate scaling because SDL_SetRenderLogicalPresentation is disabled
+					int winW, winH;
+					SDL_GetWindowSize(LawnApp::mSDLWindow, &winW, &winH);
+					
+					if (winW > 0 && winH > 0)
+					{
+						float scaleX = (float)mWidth / winW;
+						float scaleY = (float)mHeight / winH;
+
+						if (event.type == SDL_EVENT_MOUSE_MOTION)
+						{
+							event.motion.x *= scaleX;
+							event.motion.y *= scaleY;
+							mDDInterface->SetCursorPos(event.motion.x, event.motion.y);
+						}
+						else if (event.type == SDL_EVENT_MOUSE_WHEEL)
+						{
+							event.wheel.mouse_x *= scaleX;
+							event.wheel.mouse_y *= scaleY;
+						}
+						else
+						{
+							event.button.x *= scaleX;
+							event.button.y *= scaleY;
+							mDDInterface->SetCursorPos(event.button.x, event.button.y);
+						}
+					}
 				}
-				else mWidgetManager->MouseUp(x, y, aBtn);
 				break;
 			}
+
+			switch (event.type)
+			{
+			case SDL_EVENT_QUIT:
+				break;
+			case SDL_EVENT_WINDOW_RESIZED:
+				case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+				{
+					int w, h;
+					SDL_GetWindowSize(LawnApp::mSDLWindow, &w, &h);
+					mDDInterface->mPresentationRect = Rect(0, 0, w, h);
+					mWidgetManager->Resize(Rect(0, 0, mWidth, mHeight), mDDInterface->mPresentationRect);
+					break;
+				}
+				case SDL_EVENT_WINDOW_MINIMIZED:
+					mMinimized = true;
+					mPhysMinimized = true;
+					if (mMuteOnLostFocus)
+						Mute(true);
+					RehupFocus();
+					EnforceCursor();
+					break;
+				case SDL_EVENT_WINDOW_RESTORED:
+					mMinimized = false;
+					mPhysMinimized = false;
+					if (mMuteOnLostFocus)
+						Unmute(true);
+					mWidgetManager->MarkAllDirty();
+					RehupFocus();
+					EnforceCursor();
+					break;
+				case SDL_EVENT_WINDOW_FOCUS_GAINED:
+						mActive = true;
+						RehupFocus();
+						if (mActive && !mIsWindowed)
+							mWidgetManager->MarkAllDirty();
+						EnforceCursor();
+						break;
+					case SDL_EVENT_WINDOW_FOCUS_LOST:
+						mActive = false;
+						RehupFocus();
+						EnforceCursor();
+						break;
+					case SDL_EVENT_WINDOW_MOUSE_ENTER:
+						mMouseIn = true;
+						EnforceCursor();
+						break;
+					case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+						if (mMouseIn)
+						{
+							int x = mDDInterface->mCursorX;
+							int y = mDDInterface->mCursorY;
+							mWidgetManager->MouseExit(x, y);
+							mMouseIn = false;
+							EnforceCursor();
+						}
+						break;
+				case SDL_EVENT_MOUSE_MOTION:
+				{
+					if (!mMouseIn)
+					{
+						mMouseIn = true;
+						EnforceCursor();
+					}
+					
+					int x = (int)event.motion.x;
+					int y = (int)event.motion.y;
+					
+					// mDDInterface->mCursorX/Y must be in logical units for the software cursor drawing in Redraw()
+					mDDInterface->mCursorX = x;
+					mDDInterface->mCursorY = y;
+	
+					mLastUserInputTick = mLastTimerTime;
+					mWidgetManager->MouseMove(x, y);
+					break;
+				}
+				case SDL_EVENT_MOUSE_BUTTON_DOWN:
+				case SDL_EVENT_MOUSE_BUTTON_UP:
+				{
+					int x = (int)event.button.x;
+					int y = (int)event.button.y;
+	
+					int aBtn = (event.button.button == SDL_BUTTON_LEFT) ? 1 :
+					           (event.button.button == SDL_BUTTON_RIGHT) ? -1 : 3;
+					mLastUserInputTick = mLastTimerTime;
+					if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+					{
+						if (event.button.clicks == 2) aBtn *= 2;
+						// Capture mouse on button down (matches DirectDraw SetCapture behavior)
+						SDL_CaptureMouse(true);
+						mWidgetManager->MouseDown(x, y, aBtn);
+					}
+					else
+						{
+							// Release mouse capture before MouseUp if no other buttons held (matches DirectDraw ReleaseCapture)
+							int aMask = (aBtn == 1 || aBtn == 2) ? 1 : (aBtn == -1 || aBtn == -2) ? 2 : 4;
+							if ((mWidgetManager->mDownButtons & ~aMask) == 0)
+								SDL_CaptureMouse(false);
+							mWidgetManager->MouseUp(x, y, aBtn);
+						}
+					break;
+				}
 			case SDL_EVENT_MOUSE_WHEEL:
 				mLastUserInputTick = mLastTimerTime;
 				mWidgetManager->MouseWheel((int)event.wheel.y);
 				break;
+			case SDL_EVENT_TEXT_INPUT:
+				mLastUserInputTick = mLastTimerTime;
+				for (int i = 0; event.text.text[i] != '\0'; i++)
+					mWidgetManager->KeyChar((SexyChar)event.text.text[i]);
+				break;
 			case SDL_EVENT_KEY_DOWN:
 			case SDL_EVENT_KEY_UP:
-			{
-				bool isDown = (event.type == SDL_EVENT_KEY_DOWN);
-				SDL_Keycode sdlKey = event.key.key;
-				KeyCode aKey = KEYCODE_UNKNOWN;
-
-				if (isDown && sdlKey == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))
 				{
-					SwitchScreenMode(!mIsWindowed);
+					bool isDown = (event.type == SDL_EVENT_KEY_DOWN);
+					SDL_Keycode sdlKey = event.key.key;
+					KeyCode aKey = KEYCODE_UNKNOWN;
+	
+					// Track Ctrl/Alt/Shift state from SDL3 (guarantees synchronization for all debug keys)
+					SDL_Keymod mod = SDL_GetModState();
+					mCtrlDown = (mod & SDL_KMOD_CTRL) != 0;
+					mAltDown = (mod & SDL_KMOD_ALT) != 0;
+					mShiftDown = (mod & SDL_KMOD_SHIFT) != 0;
+
+					// Keep legacy key state array in sync for modifiers
+					if (mWidgetManager)
+					{
+						mWidgetManager->mKeyDown[KEYCODE_CONTROL] = mCtrlDown;
+						mWidgetManager->mKeyDown[KEYCODE_MENU] = mAltDown;
+						mWidgetManager->mKeyDown[KEYCODE_SHIFT] = mShiftDown;
+					}
+	
+					if (isDown && sdlKey == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))
+					{
+						SwitchScreenMode(!mIsWindowed);
+						ClearKeysDown();
+						break;
+					}
+	
+					if (sdlKey >= 'a' && sdlKey <= 'z') aKey = (KeyCode)(0x41 + (sdlKey - 'a'));
+					else if (sdlKey >= SDLK_0 && sdlKey <= SDLK_9) aKey = (KeyCode)(0x30 + (sdlKey - SDLK_0));
+					else if (sdlKey >= SDLK_KP_0 && sdlKey <= SDLK_KP_9) aKey = (KeyCode)(0x60 + (sdlKey - SDLK_KP_0));
+					else
+					{
+						switch (sdlKey)
+						{
+						case SDLK_UP:		aKey = KEYCODE_UP; break;
+						case SDLK_DOWN:		aKey = KEYCODE_DOWN; break;
+						case SDLK_LEFT:		aKey = KEYCODE_LEFT; break;
+						case SDLK_RIGHT:	aKey = KEYCODE_RIGHT; break;
+						case SDLK_RETURN:	aKey = KEYCODE_RETURN; break;
+						case SDLK_ESCAPE:	aKey = KEYCODE_ESCAPE; break;
+						case SDLK_SPACE:	aKey = KEYCODE_SPACE; break;
+						case SDLK_BACKSPACE:aKey = KEYCODE_BACK; break;
+						case SDLK_TAB:		aKey = KEYCODE_TAB; break;
+						case SDLK_LSHIFT:
+						case SDLK_RSHIFT:	aKey = KEYCODE_SHIFT; break;
+						case SDLK_LCTRL:
+						case SDLK_RCTRL:	aKey = KEYCODE_CONTROL; break;
+						case SDLK_LALT:
+						case SDLK_RALT:		aKey = KEYCODE_MENU; break;
+						case SDLK_F1:       aKey = KEYCODE_F1; break;
+						case SDLK_F2:       aKey = KEYCODE_F2; break;
+						case SDLK_F3:       aKey = KEYCODE_F3; break;
+						case SDLK_F4:       aKey = KEYCODE_F4; break;
+						case SDLK_F5:       aKey = KEYCODE_F5; break;
+						case SDLK_F6:       aKey = KEYCODE_F6; break;
+						case SDLK_F7:       aKey = KEYCODE_F7; break;
+						case SDLK_F8:       aKey = KEYCODE_F8; break;
+						case SDLK_F9:       aKey = KEYCODE_F9; break;
+						case SDLK_F10:      aKey = KEYCODE_F10; break;
+						case SDLK_F11:      aKey = KEYCODE_F11; break;
+						case SDLK_F12:      aKey = KEYCODE_F12; break;
+						case SDLK_PAGEUP:   aKey = KEYCODE_PRIOR; break;
+						case SDLK_PAGEDOWN: aKey = KEYCODE_NEXT; break;
+						case SDLK_END:      aKey = KEYCODE_END; break;
+						case SDLK_HOME:     aKey = KEYCODE_HOME; break;
+						case SDLK_INSERT:   aKey = KEYCODE_INSERT; break;
+						case SDLK_DELETE:   aKey = KEYCODE_DELETE; break;
+						case SDLK_PRINTSCREEN: aKey = KEYCODE_SNAPSHOT; break;
+						case SDLK_SCROLLLOCK: aKey = KEYCODE_SCROLL; break;
+						case SDLK_PAUSE:    aKey = KEYCODE_PAUSE; break;
+						case SDLK_NUMLOCKCLEAR: aKey = KEYCODE_NUMLOCK; break;
+						case SDLK_KP_MULTIPLY: aKey = KEYCODE_MULTIPLY; break;
+						case SDLK_KP_PLUS:     aKey = KEYCODE_ADD; break;
+						case SDLK_KP_MINUS:    aKey = KEYCODE_SUBTRACT; break;
+						case SDLK_KP_DECIMAL:  aKey = KEYCODE_DECIMAL; break;
+						case SDLK_KP_DIVIDE:   aKey = KEYCODE_DIVIDE; break;
+						}
+					}
+	
+					mLastUserInputTick = mLastTimerTime;
+					if (aKey != KEYCODE_UNKNOWN)
+					{
+						if (isDown)
+						{
+							// Ctrl+Alt+D debug toggle (using real-time modifier state)
+							if ((aKey == 'D') && (mWidgetManager != NULL) && mCtrlDown && mAltDown)
+							{
+								PlaySoundA("c:\\windows\\media\\Windows XP Menu Command.wav", NULL, SND_ASYNC);
+								mDebugKeysEnabled = !mDebugKeysEnabled;
+							}
+	
+							if (mDebugKeysEnabled)
+							{
+								if (DebugKeyDown(aKey))
+									break;
+							}
+	
+							mWidgetManager->KeyDown(aKey);
+						}
+						else mWidgetManager->KeyUp(aKey);
+					}
 					break;
 				}
 
-				if (sdlKey >= SDLK_A && sdlKey <= SDLK_Z) aKey = (KeyCode)(0x41 + (sdlKey - SDLK_A));
-				else if (sdlKey >= SDLK_0 && sdlKey <= SDLK_9) aKey = (KeyCode)(0x30 + (sdlKey - SDLK_0));
-				else if (sdlKey >= SDLK_KP_0 && sdlKey <= SDLK_KP_9) aKey = (KeyCode)(0x60 + (sdlKey - SDLK_KP_0));
-				else
-				{
-					switch (sdlKey)
-					{
-					case SDLK_UP:		aKey = KEYCODE_UP; break;
-					case SDLK_DOWN:		aKey = KEYCODE_DOWN; break;
-					case SDLK_LEFT:		aKey = KEYCODE_LEFT; break;
-					case SDLK_RIGHT:	aKey = KEYCODE_RIGHT; break;
-					case SDLK_RETURN:	aKey = KEYCODE_RETURN; break;
-					case SDLK_ESCAPE:	aKey = KEYCODE_ESCAPE; break;
-					case SDLK_SPACE:	aKey = KEYCODE_SPACE; break;
-					case SDLK_BACKSPACE:aKey = KEYCODE_BACK; break;
-					case SDLK_TAB:		aKey = KEYCODE_TAB; break;
-					case SDLK_LSHIFT:
-					case SDLK_RSHIFT:	aKey = KEYCODE_SHIFT; break;
-					case SDLK_LCTRL:
-					case SDLK_RCTRL:	aKey = KEYCODE_CONTROL; break;
-					case SDLK_LALT:
-					case SDLK_RALT:		aKey = KEYCODE_MENU; break;
-					}
-				}
-
-				mLastUserInputTick = mLastTimerTime;
-				if (aKey != KEYCODE_UNKNOWN)
-				{
-					if (isDown) mWidgetManager->KeyDown(aKey);
-					else mWidgetManager->KeyUp(aKey);
-				}
-				break;
-			}
-			case SDL_EVENT_TEXT_INPUT:
-				for (int i = 0; event.text.text[i] != '\0'; ++i)
-					mWidgetManager->KeyChar((SexyChar)event.text.text[i]);
-				break;
 			}
 		}
 
@@ -5703,6 +5922,10 @@ int SexyAppBase::InitDDInterface()
 		Uint32 aFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 		if (!mIsWindowed) aFlags |= SDL_WINDOW_FULLSCREEN;
 		LawnApp::mSDLWindow = SDL_CreateWindow(SexyStringToString(mTitle).c_str(), mWidth, mHeight, aFlags);
+		// Hide SDL cursor immediately - game uses Win32/own cursor rendering
+		SDL_HideCursor();
+
+		// SDL3 uses linear filtering by default - no need to set scale quality hint
 	}
 
 	if (LawnApp::mSDLWindow)
@@ -5723,14 +5946,18 @@ int SexyAppBase::InitDDInterface()
 
 	if (!LawnApp::mSDLRenderer)
 	{
-		SDL_SetHint(SDL_HINT_RENDER_VSYNC, mVSyncUpdates ? "1" : "0");
 		LawnApp::mSDLRenderer = SDL_CreateRenderer(LawnApp::mSDLWindow, NULL);
 		
 		if (LawnApp::mSDLRenderer)
 		{
+			// Set VSync programmatically after renderer creation (SDL3 recommended way)
+			SDL_SetRenderVSync(LawnApp::mSDLRenderer, mVSyncUpdates ? 1 : 0);
+
 			const char* aDriver = SDL_GetRendererName(LawnApp::mSDLRenderer);
+			int actualVSync = 0;
+			SDL_GetRenderVSync(LawnApp::mSDLRenderer, &actualVSync);
 			char aBuf[256];
-			sprintf(aBuf, "[SDL3] Renderer: %s | VSync: %s | Quality: Linear\n", aDriver ? aDriver : "Unknown", mVSyncUpdates ? "ON" : "OFF");
+			sprintf(aBuf, "[SDL3] Renderer: %s | VSync requested: %s | actual: %d\n", aDriver ? aDriver : "Unknown", mVSyncUpdates ? "ON" : "OFF", actualVSync);
 			OutputDebugStringA(aBuf);
 
 			SDL3TextureManager::Instance().SetRenderer(LawnApp::mSDLRenderer);
@@ -5739,8 +5966,19 @@ int SexyAppBase::InitDDInterface()
 
 	if (LawnApp::mSDLRenderer)
 	{
-		// SDL_SetRenderLogicalPresentation removed to prevent stuttering/pacing issues.
-		// Scaling is now handled manually in SDL3TextureManager::EndFrame for better stability.
+		// Detect actual display refresh rate for proper VSync timing
+		SDL_DisplayID displayID = SDL_GetDisplayForWindow(LawnApp::mSDLWindow);
+		if (displayID)
+		{
+			const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(displayID);
+			if (mode && mode->refresh_rate > 0)
+			{
+				mSyncRefreshRate = (int)mode->refresh_rate;
+				mDDInterface->mRefreshRate = mode->refresh_rate;
+				mDDInterface->mMillisecondsPerFrame = 1000 / mode->refresh_rate;
+				TodTrace("[SDL3] Display refresh rate: %d Hz, mSyncRefreshRate set to %d", mode->refresh_rate, mSyncRefreshRate);
+			}
+		}
 	}
 
 	if (!LawnApp::mSDLWindow || !LawnApp::mSDLRenderer)
@@ -5753,6 +5991,12 @@ int SexyAppBase::InitDDInterface()
 
 	// Unify handles: Map SDL3 window HWND to SexyAppFramework mHWnd
 	mHWnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(LawnApp::mSDLWindow), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+
+	// Initialize SDL cursor objects for proper OS cursor control via SDL3 API.
+	// This replaces the old approach of using ::SetCursor() which SDL3's internal
+	// WM_SETCURSOR handler overrides. By setting SDL_Cursor objects, SDL3's own
+	// WM_SETCURSOR handler will use our chosen cursor.
+	InitSDLCursors();
 
 	// Force creation of a screen image if not exists
 	if (mDDInterface->mScreenImage == NULL)
@@ -5803,7 +6047,6 @@ void SexyAppBase::Start()
 	if (mShutdown)
 		return;
 
-	StartCursorThread();
 
 	if (mAutoStartLoadingThread)
 		StartLoadingThread();

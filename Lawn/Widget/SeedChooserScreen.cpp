@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include "../Board.h"
 #include "../Zombie.h"
 #include "GameButton.h"
@@ -40,6 +41,8 @@ SeedChooserScreen::SeedChooserScreen()
 	mToolTipSeed = -1;
 	mScrollAmount = 0;
 	mScrollPosition = 0;
+	mGamepadFocusIndex = 0;
+	mGamepadActive = false;
 
 	mStartButton = new GameButton(SeedChooserScreen::SeedChooserScreen_Start);
 	mStartButton->mLabel = _S("[LETS_ROCK_BUTTON]");
@@ -431,6 +434,39 @@ void SeedChooserScreen::Draw(Graphics* g)
 		g->ClearClipRect();
 	}
 
+	// Draw Gamepad Focus
+	if (mApp->mGamepadActive && mChooseState == CHOOSE_NORMAL)
+	{
+		int fx, fy;
+		GetSeedPositionInChooser(mGamepadFocusIndex, fx, fy);
+		SeedType aSeedType = (SeedType)mGamepadFocusIndex;
+		bool available = mApp->SeedTypeAvailable(aSeedType);
+		bool grayed = false;
+		if (available)
+		{
+			ChosenSeed& aChosenSeed = mChosenSeeds[aSeedType];
+			if (SeedNotRecommendedToPick(aSeedType) || SeedNotAllowedToPick(aSeedType) || IsImitaterUnselectable(aSeedType) || SeedNotAllowedDuringTrial(aSeedType))
+				grayed = true;
+		}
+		else grayed = true;
+
+		g->SetClipRect(cSeedClipRect);
+		if (grayed)
+		{
+			g->SetColorizeImages(true);
+			g->SetColor(Color(128, 128, 128));
+		}
+		
+		g->DrawImage(Sexy::IMAGE_SEED_SELECTOR, fx - 4, fy - 4, 58, 78);
+		
+		if (grayed)
+		{
+			g->SetColorizeImages(false);
+			g->SetColor(Color::White);
+		}
+		g->ClearClipRect();
+	}
+
 	// Draw flying seeds
 	for (SeedType aSeedType = SEED_PEASHOOTER; aSeedType < NUM_SEEDS_IN_CHOOSER; aSeedType = (SeedType)(aSeedType + 1))
 	{
@@ -618,6 +654,77 @@ void SeedChooserScreen::Update()
 	UpdateViewLawn();
 	UpdateCursor();
 	MarkDirty();
+
+	// Handle Gamepad Navigation
+	if (mApp->mGamepadActive && mChooseState == CHOOSE_NORMAL && mApp->mCrazyDaveState == CrazyDaveState::CRAZY_DAVE_OFF && mBoard->mCutScene->mSeedChoosing)
+	{
+		// Gamepad START button triggers "Let's Rock" if enabled
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_START] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_START])
+		{
+			if (mStartButton && !mStartButton->mDisabled)
+			{
+				mApp->PlaySample(Sexy::SOUND_TAP);
+				ButtonDepress(SeedChooserScreen::SeedChooserScreen_Start);
+			}
+		}
+		static int moveDelay = 0;
+		if (moveDelay > 0) moveDelay--;
+
+		float lx = mApp->mGamepadLeftStickX;
+		float ly = mApp->mGamepadLeftStickY;
+		bool up = mApp->mGamepadDpadUp || ly < -0.5f;
+		bool down = mApp->mGamepadDpadDown || ly > 0.5f;
+		bool left = mApp->mGamepadDpadLeft || lx < -0.5f;
+		bool right = mApp->mGamepadDpadRight || lx > 0.5f;
+
+		if (moveDelay <= 0)
+		{
+			int dx = 0; int dy = 0;
+			if (up) dy = -1;
+			else if (down) dy = 1;
+			else if (left) dx = -1;
+			else if (right) dx = 1;
+
+			if (dx != 0 || dy != 0)
+			{
+				int cols = cSeedPacketRows; // 8
+				int nextIdx = mGamepadFocusIndex + dx + dy * cols;
+				if (nextIdx >= 0 && nextIdx < NUM_SEEDS_IN_CHOOSER)
+				{
+					mGamepadFocusIndex = nextIdx;
+					moveDelay = 12;
+					mApp->PlaySample(Sexy::SOUND_TAP);
+				}
+			}
+		}
+		else if (!up && !down && !left && !right)
+		{
+			moveDelay = 0;
+		}
+
+		// Auto-scroll to keep focused seed visible
+		int fx, fy;
+		GetSeedPositionInChooser(mGamepadFocusIndex, fx, fy);
+		fy += mScrollPosition; // get base Y without scroll
+		if (fy - mScrollPosition < cSeedClipRect.mY + 10)
+			mScrollPosition = max(0.0f, fy - cSeedClipRect.mY - 10);
+		else if (fy - mScrollPosition + SEED_PACKET_HEIGHT > cSeedClipRect.mY + cSeedClipRect.mHeight - 10)
+			mScrollPosition = min(mMaxScrollPosition, fy + SEED_PACKET_HEIGHT - (cSeedClipRect.mY + cSeedClipRect.mHeight) + 10);
+
+		// Handle Selection (A button)
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_SOUTH] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_SOUTH])
+		{
+			SeedType aSeedType = (SeedType)mGamepadFocusIndex;
+			if (mApp->SeedTypeAvailable(aSeedType))
+			{
+				ChosenSeed& aChosenSeed = mChosenSeeds[aSeedType];
+				if (aChosenSeed.mSeedState == SEED_IN_CHOOSER)
+					ClickedSeedInChooser(aChosenSeed);
+				else if (aChosenSeed.mSeedState == SEED_IN_BANK && !aChosenSeed.mCrazyDavePicked)
+					ClickedSeedInBank(aChosenSeed);
+			}
+		}
+	}
 }
 
 void SeedChooserScreen::MouseWheel(int theDelta)
@@ -1118,6 +1225,9 @@ bool SeedChooserScreen::IsImitaterUnselectable(SeedType seedType)
 void SeedChooserScreen::MouseDown(int x, int y, int theClickCount)
 {
 	Widget::MouseDown(x, y, theClickCount);
+
+	if (mApp->mCrazyDaveState != CrazyDaveState::CRAZY_DAVE_OFF)
+		return;
 
 	if (mSeedsInFlight > 0)
 	{

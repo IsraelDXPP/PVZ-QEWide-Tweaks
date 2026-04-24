@@ -40,6 +40,10 @@ public:
     void                FlashIfReady();
     bool                CanPickUp();
     void                SetPacketType(SeedType theSeedType, SeedType theImitaterType = SeedType::SEED_NONE);
+    // Gamepad-specific: only moves cursor index, no sound, no pickup
+    void                GamepadSelect();
+    // Gamepad-specific: validates and picks up with proper BUZZER/SEEDLIFT feedback
+    bool                GamepadPickUp();
 };
 
 class SeedBank : public GameObject

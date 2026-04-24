@@ -1488,6 +1488,19 @@ void LawnApp::StartDiscord()
 
 bool LawnApp::DebugKeyDown(int theKey)
 {
+	if (theKey == KEYCODE_F1)
+	{
+		mResourceManager->ParseResourcesFile(mResourcesPath);
+		if (mBoard) mBoard->MarkDirty();
+		return true;
+	}
+	else if (theKey == KEYCODE_F2 && mBoard)
+	{
+		mBoardResult = BoardResult::BOARDRESULT_RESTART;
+		PreNewGame(mGameMode, false);
+		return true;
+	}
+
 	return SexyAppBase::DebugKeyDown(theKey);
 }
 
@@ -3369,6 +3382,11 @@ void LawnApp::PreloadForUser()
 void LawnApp::EnforceCursor()
 {
 	mCustomCursorsEnabled = mCustomCursor;
+	if (mGamepadActive)
+	{
+		SDL_HideCursor();
+		return;
+	}
 
 	if (mSEHOccured || !mMouseIn)
 	{

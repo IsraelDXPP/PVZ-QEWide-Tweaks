@@ -236,6 +236,12 @@ public:
 	int								mCoinBankX;
 	int								mCoinBankY;
 
+	// Gamepad grid selector (gameplay only)
+	int							mGamepadGridX;
+	int							mGamepadGridY;
+	int							mGamepadSeedIndex;
+	bool						mGamepadWasActive;
+
 public:
 	Board(LawnApp* theApp);
 	virtual ~Board();
@@ -404,6 +410,7 @@ public:
 	int								GetSurvivalFlagsCompleted();
 	bool							HasProgressMeter();
 	void							UpdateCursor();
+	void							UpdateGamepad();
 	void							UpdateTutorial();
 	SeedType						GetSeedTypeInCursor();
 	/*inline*/ int					CountPlantByType(SeedType theSeedType);

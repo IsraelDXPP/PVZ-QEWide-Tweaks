@@ -31,6 +31,7 @@ public:
 	virtual void			SetValue(double theValue);
 
 	virtual bool			HasTransparencies();
+	virtual void			Update();
 	virtual void			Draw(Graphics* g);	
 	void					SliderDraw(Graphics* g);
 

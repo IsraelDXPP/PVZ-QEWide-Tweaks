@@ -43,6 +43,9 @@ public:
 	GameButton*					mZombieButton;			
 	Sexy::Slider*				mPlantSlider;
 	Sexy::Slider*				mZombieSlider;
+	int							mGamepadGridX;
+	int							mGamepadGridY;
+	int							mGamepadFocusIndex; // 0: Index, 1: Plants, 2: Zombies
 	AlmanacPage					mOpenPage;				
 	Reanimation*				mReanim[4];				
 	SeedType					mSelectedSeed;			

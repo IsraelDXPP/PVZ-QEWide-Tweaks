@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <time.h>
 #include "../Coin.h"
 #include "../Board.h"
@@ -56,6 +57,7 @@ StoreScreen::StoreScreen(LawnApp* theApp) : Dialog(nullptr, nullptr, DIALOG_STOR
     mPreviousAmbientSpeechIndex = -1;
     mPage = STORE_PAGE_SLOT_UPGRADES;
     mMouseOverItem = STORE_ITEM_INVALID;
+    mGamepadFocusIndex = 0;
     mHatchTimer = 0;
     mShakeX = 0;
     mShakeY = 0;
@@ -748,6 +750,78 @@ void StoreScreen::Update()
     }
 
     UpdateMouse();
+    if (mApp->mGamepadActive && CanInteractWithButtons())
+    {
+        // Handle LB/RB for Page switching
+        if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER])
+            ButtonDepress(StoreScreen_Prev);
+        if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER])
+            ButtonDepress(StoreScreen_Next);
+
+        // Handle stick for item focus
+        static int moveDelay = 0;
+        if (moveDelay > 0) moveDelay--;
+        
+        float lx = mApp->mGamepadLeftStickX;
+        float ly = mApp->mGamepadLeftStickY;
+        bool up = mApp->mGamepadDpadUp || ly < -0.5f;
+        bool down = mApp->mGamepadDpadDown || ly > 0.5f;
+        bool left = mApp->mGamepadDpadLeft || lx < -0.5f;
+        bool right = mApp->mGamepadDpadRight || lx > 0.5f;
+
+        if (moveDelay <= 0)
+        {
+            int dx = 0; int dy = 0;
+            if (up) dy = -1;
+            else if (down) dy = 1;
+            else if (left) dx = -1;
+            else if (right) dx = 1;
+
+            if (dx != 0 || dy != 0)
+            {
+                int nextIdx = mGamepadFocusIndex + dx + dy * 4;
+                if (nextIdx >= 0 && nextIdx < MAX_PAGE_SPOTS)
+                {
+                    mGamepadFocusIndex = nextIdx;
+                    moveDelay = 12;
+                    mApp->PlaySample(Sexy::SOUND_TAP);
+                }
+            }
+        }
+        else if (!up && !down && !left && !right) moveDelay = 0;
+
+        // Sync virtual mouse to focused item
+        int fx, fy;
+        GetStorePosition(mGamepadFocusIndex, fx, fy);
+        mApp->mWidgetManager->MousePosition(mX + fx + 25, mY + fy + 40);
+        
+        // Handle A button for purchase
+        if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_SOUTH] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_SOUTH])
+        {
+            if (mBubbleClickToContinue)
+            {
+                mApp->AdvanceCrazyDaveText();
+            }
+            else if (mMouseOverItem != STORE_ITEM_INVALID)
+            {
+                MouseDown(mApp->mWidgetManager->mLastMouseX - mX, mApp->mWidgetManager->mLastMouseY - mY, 1);
+            }
+        }
+        
+        // Handle B button for exit
+        if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_EAST] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_EAST])
+        {
+            ButtonDepress(StoreScreen_Back);
+        }
+
+        // Handle X button for dialogue skip
+        if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_WEST] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_WEST])
+        {
+            mApp->AdvanceCrazyDaveText();
+        }
+	}
+
+
     if (CanInteractWithButtons() && mTrialLockedWhenStoreOpened && !mApp->IsTrialStageLocked())
     {
         mPurchasedFullVersion = true;

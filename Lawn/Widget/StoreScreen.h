@@ -53,6 +53,7 @@ public:
     bool                        mPurchasedFullVersion;          
     bool                        mTrialLockedWhenStoreOpened;    
     bool                        mInCutscene;
+    int                         mGamepadFocusIndex;
 
 public:
     StoreScreen(LawnApp* theApp);

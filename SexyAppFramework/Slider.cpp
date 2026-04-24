@@ -37,6 +37,46 @@ bool Slider::HasTransparencies()
 	return true;
 }
 
+void Slider::Update()
+{
+	Widget::Update();
+
+	if (mWidgetManager && mWidgetManager->mApp->mGamepadActive && mWidgetManager->mFocusWidget == this)
+	{
+		float lx = mWidgetManager->mApp->mGamepadLeftStickX;
+		bool left = mWidgetManager->mApp->mGamepadDpadLeft || lx < -0.5f;
+		bool right = mWidgetManager->mApp->mGamepadDpadRight || lx > 0.5f;
+
+		static int moveDelay = 0;
+		if (moveDelay > 0) moveDelay--;
+
+		if (moveDelay <= 0)
+		{
+			double anOldVal = mVal;
+			if (left)
+			{
+				SetValue(mVal - 0.05);
+				moveDelay = 5;
+			}
+			else if (right)
+			{
+				SetValue(mVal + 0.05);
+				moveDelay = 5;
+			}
+
+			if (mVal != anOldVal)
+			{
+				mListener->SliderVal(mId, mVal);
+				MarkDirtyFull();
+			}
+		}
+		else if (!left && !right)
+		{
+			moveDelay = 0;
+		}
+	}
+}
+
 void Slider::Draw(Graphics* g)
 {	
 	if (mNoDraw)

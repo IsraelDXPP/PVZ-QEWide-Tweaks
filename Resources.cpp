@@ -768,6 +768,9 @@ bool Sexy::ExtractDelayLoad_ZombiquariumResources(ResourceManager *theManager)
 
 // Init Resources
 Image* Sexy::IMAGE_BLANK;
+Image* Sexy::IMAGE_BOARD_SELECTOR;
+Image* Sexy::IMAGE_SEED_SELECTOR;
+Image* Sexy::IMAGE_SEED_SELECTOR_SHADOW;
 Image* Sexy::IMAGE_PARTNER_LOGO;
 Image* Sexy::IMAGE_POPCAP_LOGO;
 
@@ -779,6 +782,9 @@ bool Sexy::ExtractInitResources(ResourceManager *theManager)
 	try
 	{
 		IMAGE_BLANK = aMgr.GetImageThrow("IMAGE_BLANK");
+		IMAGE_BOARD_SELECTOR = aMgr.GetImageThrow("IMAGE_BOARD_SELECTOR");
+		IMAGE_SEED_SELECTOR = aMgr.GetImageThrow("IMAGE_SEED_SELECTOR");
+		IMAGE_SEED_SELECTOR_SHADOW = aMgr.GetImageThrow("IMAGE_SEED_SELECTOR_SHADOW");
 		IMAGE_PARTNER_LOGO = aMgr.GetImageThrow("IMAGE_PARTNER_LOGO");
 		IMAGE_POPCAP_LOGO = aMgr.GetImageThrow("IMAGE_POPCAP_LOGO");
 	}

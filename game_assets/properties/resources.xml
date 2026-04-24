@@ -4,6 +4,9 @@
 <Resources id="Init">
   <SetDefaults path="images" idprefix="IMAGE_" />
   <Image id="BLANK" path="blank" />
+  <Image id="BOARD_SELECTOR" path="board_selector" />
+  <Image id="SEED_SELECTOR" path="seed_selector" />
+  <Image id="SEED_SELECTOR_SHADOW" path="seed_selector_shadow" />
   <Image id="POPCAP_LOGO" path="PopCap_Logo" />
   
   <SetDefaults path="properties" idprefix="IMAGE_" />

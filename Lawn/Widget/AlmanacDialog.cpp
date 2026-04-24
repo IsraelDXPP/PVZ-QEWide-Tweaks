@@ -1,4 +1,4 @@
-﻿#include "../Board.h"
+#include "../Board.h"
 #include "../Plant.h"
 #include "../Zombie.h"
 #include "GameButton.h"
@@ -15,6 +15,7 @@
 #include "../../SexyAppFramework/WidgetManager.h"
 #include "../../SexyAppFramework/Font.h"
 #include "../../SexyAppFramework/Slider.h"
+#include <SDL3/SDL.h>
 
 int gZombieDefeated[NUM_ZOMBIE_TYPES] = { false };
 const int cSeedPacketRows = 8;
@@ -42,6 +43,9 @@ AlmanacDialog::AlmanacDialog(LawnApp* theApp) : LawnDialog(theApp, DIALOG_ALMANA
 	mDescriptionScroll = 0;
 	mDescriptionOverfill = false;
 	mDescriptionSliderDragging = false;
+	mGamepadGridX = 0;
+	mGamepadGridY = 0;
+	mGamepadFocusIndex = 0;
 
 	TodLoadResources("DelayLoad_Almanac");
 	for (int i = 0; i < LENGTH(mZombiePerfTest); i++) mZombiePerfTest[i] = nullptr;
@@ -252,8 +256,98 @@ void AlmanacDialog::ShowZombie(ZombieType theZombieType)
 
 void AlmanacDialog::Update()
 {
-	mLastMouseX = mApp->mWidgetManager->mLastMouseX;
-	mLastMouseY = mApp->mWidgetManager->mLastMouseY;
+	if (mApp->mGamepadActive)
+	{
+		// ── Gamepad Navigation Logic ─────────────────────────────────────────
+		static int navDebounce = 0;
+		if (navDebounce > 0) navDebounce--;
+
+		bool stickLeft = mApp->mGamepadLeftStickX < -0.5f || mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_DPAD_LEFT];
+		bool stickRight = mApp->mGamepadLeftStickX > 0.5f || mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_DPAD_RIGHT];
+		bool stickUp = mApp->mGamepadLeftStickY < -0.5f || mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_DPAD_UP];
+		bool stickDown = mApp->mGamepadLeftStickY > 0.5f || mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_DPAD_DOWN];
+
+		if (navDebounce == 0 && (stickLeft || stickRight || stickUp || stickDown))
+		{
+			navDebounce = 15;
+			if (mOpenPage == AlmanacPage::ALMANAC_PAGE_INDEX)
+			{
+				if (stickLeft) mGamepadFocusIndex = max(0, mGamepadFocusIndex - 1);
+				if (stickRight) mGamepadFocusIndex = min(1, mGamepadFocusIndex + 1); // 0: Plants, 1: Zombies
+			}
+			else
+			{
+				if (stickLeft) mGamepadGridX--;
+				if (stickRight) mGamepadGridX++;
+				if (stickUp) mGamepadGridY--;
+				if (stickDown) mGamepadGridY++;
+			}
+		}
+
+		// ── LB/RB: Quick Category Switch ─────────────────────────────────────
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER])
+		{
+			SetPage(ALMANAC_PAGE_PLANTS);
+			mGamepadGridX = 0; mGamepadGridY = 0;
+		}
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER])
+		{
+			SetPage(ALMANAC_PAGE_ZOMBIES);
+			mGamepadGridX = 0; mGamepadGridY = 0;
+		}
+
+		// Clamp and Wrap grid coordinates
+		int rows = (mOpenPage == ALMANAC_PAGE_PLANTS) ? cSeedPacketRows : cZombieRows;
+		int totalItems = (mOpenPage == ALMANAC_PAGE_PLANTS) ? NUM_SEEDS_IN_CHOOSER : NUM_ZOMBIES_IN_ALMANAC;
+		int maxGridY = (totalItems + rows - 1) / rows;
+
+		if (mGamepadGridX < 0) mGamepadGridX = rows - 1;
+		if (mGamepadGridX >= rows) mGamepadGridX = 0;
+		if (mGamepadGridY < 0) mGamepadGridY = 0;
+		if (mGamepadGridY >= maxGridY) mGamepadGridY = maxGridY - 1;
+
+		// Calculate Virtual Mouse Position based on Selection
+		if (mOpenPage == ALMANAC_PAGE_INDEX)
+		{
+			// Position over Plants or Zombies main buttons
+			if (mGamepadFocusIndex == 0) { mLastMouseX = mPlantButton->mX + 10; mLastMouseY = mPlantButton->mY + 10; }
+			else { mLastMouseX = mZombieButton->mX + 10; mLastMouseY = mZombieButton->mY + 10; }
+		}
+		else
+		{
+			int idx = mGamepadGridY * rows + mGamepadGridX;
+			if (idx >= totalItems) idx = totalItems - 1;
+
+			int aPosX, aPosY;
+			if (mOpenPage == ALMANAC_PAGE_PLANTS) GetSeedPosition((SeedType)idx, aPosX, aPosY);
+			else GetZombiePosition((ZombieType)idx, aPosX, aPosY);
+
+			mLastMouseX = aPosX + 30;
+			mLastMouseY = aPosY + 30;
+
+			// Auto-scroll to keep selection visible
+			Rect clipRect = (mOpenPage == ALMANAC_PAGE_PLANTS) ? cSeedClipRect : cZombieClipRect;
+			if (mLastMouseY < clipRect.mY + 40) mScrollAmount -= 2.0f;
+			if (mLastMouseY > clipRect.mY + clipRect.mHeight - 40) mScrollAmount += 2.0f;
+		}
+
+		// ── Button Handlers ──────────────────────────────────────────────────
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_SOUTH] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_SOUTH])
+		{
+			MouseDown(mLastMouseX, mLastMouseY, 1);
+			MouseUp(mLastMouseX, mLastMouseY, 1);
+		}
+		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_EAST] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_EAST])
+		{
+			if (mOpenPage == ALMANAC_PAGE_INDEX) mApp->KillAlmanacDialog();
+			else SetPage(ALMANAC_PAGE_INDEX);
+		}
+	}
+	else
+	{
+		mLastMouseX = mApp->mWidgetManager->mLastMouseX;
+		mLastMouseY = mApp->mWidgetManager->mLastMouseY;
+	}
 	mCloseButton->Update();
 	mIndexButton->Update();
 	mPlantButton->Update();

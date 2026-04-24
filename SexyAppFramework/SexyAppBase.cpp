@@ -8,6 +8,7 @@
 #include "SEHCatcher.h"
 #include "WidgetManager.h"
 #include "Widget.h"
+#include "../Lawn/Board.h"
 #include "Debug.h"
 #include "KeyCodes.h"
 #include "DDInterface.h"
@@ -20,6 +21,7 @@
 #include "..\ImageLib\ImageLib.h"
 #include "DSoundManager.h"
 #include "DSoundInstance.h"
+#include "Slider.h"
 #include "Rect.h"
 #include "FModMusicInterface.h"
 #include "PropertiesParser.h"
@@ -29,6 +31,7 @@
 #include <process.h>
 #include <direct.h>
 #include <fstream>
+#include <SDL3/SDL.h>
 #include <time.h>
 #include <math.h>
 #include <regstr.h>
@@ -327,6 +330,26 @@ SexyAppBase::SexyAppBase()
 	mResourcesPath = "properties\\resources.xml";
 	mCursor = nullptr;
 	mCustomCursor = false;
+
+	// Gamepad initialization
+	mGamepad = nullptr;
+	mGamepadInstanceID = -1;
+	mGamepadConnected = false;
+	mGamepadActive = false;
+	mGamepadLeftStickX = 0.0f;
+	mGamepadLeftStickY = 0.0f;
+	mGamepadRightStickX = 0.0f;
+	mGamepadRightStickY = 0.0f;
+	mGamepadLeftTrigger = 0.0f;
+	mGamepadRightTrigger = 0.0f;
+	memset(mGamepadButtons, 0, sizeof(mGamepadButtons));
+	memset(mGamepadButtonsPrev, 0, sizeof(mGamepadButtonsPrev));
+	mGamepadDpadUp = false;
+	mGamepadDpadDown = false;
+	mGamepadDpadLeft = false;
+	mGamepadDpadRight = false;
+	mGamepadVibrationEffectId = -1;
+
 	mProdName = "PlantsVsZombies";
 	mRegKey = "PopCap\\PlantsVsZombies";
 
@@ -2288,6 +2311,8 @@ void SexyAppBase::UpdateFrames()
 
 	mMusicInterface->Update();
 	CleanSharedImages();
+
+	memcpy(mGamepadButtonsPrev, mGamepadButtons, sizeof(mGamepadButtons));
 }
 
 void SexyAppBase::DoUpdateFramesF(float theFrac)
@@ -2377,7 +2402,7 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 			return;
 
 		// Draw software cursor into the CPU buffer before uploading
-		if (mDDInterface->mCursorImage != nullptr && (mCustomCursorsEnabled || mPlayingDemoBuffer))
+		if (mDDInterface->mCursorImage != nullptr && !mGamepadActive && (mCustomCursorsEnabled || mPlayingDemoBuffer))
 		{
 			Graphics g(aMemImage);
 			g.DrawImage(mDDInterface->mCursorImage, mDDInterface->mCursorX, mDDInterface->mCursorY);
@@ -2395,7 +2420,7 @@ void SexyAppBase::Redraw(Rect* theClipRect)
 	// Draw software cursor overlay in 3D accelerated mode
 	if (Is3DAccelerated())
 	{
-		if (mDDInterface->mCursorImage != nullptr && (mCustomCursorsEnabled || mPlayingDemoBuffer))
+		if (mDDInterface->mCursorImage != nullptr && !mGamepadActive && (mCustomCursorsEnabled || mPlayingDemoBuffer))
 		{
 			SDL_Texture* aTex = (SDL_Texture*)SDL3TextureManager::Instance().GetTextureForImage(mDDInterface->mCursorImage);
 			if (aTex)
@@ -5178,12 +5203,26 @@ void SexyAppBase::EnforceCursor()
 	if (mDDInterface == NULL)
 		return;
 
+	if (mGamepadActive)
+	{
+		SDL_HideCursor();
+		if (mDDInterface->SetCursorImage(NULL))
+			mCustomCursorDirty = true;
+		if (wantSysCursor != mSysCursor)
+			mSysCursor = false;
+		
+		// Move software cursor off-screen to prevent hover effects
+		mDDInterface->mCursorX = -1000;
+		mDDInterface->mCursorY = -1000;
+		return;
+	}
+
 	if ((mSEHOccured) || (!mMouseIn) || (!mActive))
 	{
 		// Show default system cursor when inactive/outside window
 		if (mSDLCursors[CURSOR_POINTER])
 			SDL_SetCursor(mSDLCursors[CURSOR_POINTER]);
-		SDL_ShowCursor();
+		if (!mGamepadActive) SDL_ShowCursor();
 		if (mDDInterface->SetCursorImage(NULL))
 			mCustomCursorDirty = true;
 	}
@@ -5202,7 +5241,7 @@ void SexyAppBase::EnforceCursor()
 			if (sdlCursor)
 			{
 				SDL_SetCursor(sdlCursor);
-				SDL_ShowCursor();
+				if (!mGamepadActive) SDL_ShowCursor();
 			}
 			if (mDDInterface->SetCursorImage(NULL))
 				mCustomCursorDirty = true;
@@ -5698,6 +5737,10 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 						break;
 				case SDL_EVENT_MOUSE_MOTION:
 				{
+					if (mGamepadActive && (abs(event.motion.xrel) < 10 && abs(event.motion.yrel) < 10))
+						break;
+
+					SetGamepadActive(false);
 					if (!mMouseIn)
 					{
 						mMouseIn = true;
@@ -5718,6 +5761,9 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 				case SDL_EVENT_MOUSE_BUTTON_DOWN:
 				case SDL_EVENT_MOUSE_BUTTON_UP:
 				{
+					// While using gamepad, ignore physical mouse button events
+					if (mGamepadActive) break;
+					SetGamepadActive(false);
 					int x = (int)event.button.x;
 					int y = (int)event.button.y;
 	
@@ -5745,6 +5791,149 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 				mLastUserInputTick = mLastTimerTime;
 				mWidgetManager->MouseWheel((int)event.wheel.y);
 				break;
+			// Gamepad events
+			case SDL_EVENT_GAMEPAD_ADDED:
+				{
+					SDL_Gamepad* gamepad = SDL_OpenGamepad(event.gdevice.which);
+					if (gamepad)
+					{
+						// If we don't have a gamepad yet, use this one
+						if (!mGamepadConnected)
+						{
+							mGamepad = gamepad;
+							mGamepadInstanceID = SDL_GetGamepadID(gamepad);
+							mGamepadConnected = true;
+						}
+						else
+						{
+							// Already have a gamepad, close this one
+							SDL_CloseGamepad(gamepad);
+						}
+					}
+				}
+				break;
+			case SDL_EVENT_GAMEPAD_REMOVED:
+				{
+					if (mGamepad && mGamepadInstanceID == event.gdevice.which)
+					{
+						SDL_CloseGamepad(mGamepad);
+						mGamepad = nullptr;
+						mGamepadInstanceID = -1;
+						mGamepadConnected = false;
+						SetGamepadActive(false);
+					}
+				}
+				break;
+			case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+				{
+					if (mGamepad && mGamepadInstanceID == event.gaxis.which)
+					{
+						float value = event.gaxis.value / 32767.0f;
+						if (value > -0.2f && value < 0.2f) value = 0.0f; // deadzone
+						else SetGamepadActive(true);
+						switch (event.gaxis.axis)
+						{
+						case SDL_GAMEPAD_AXIS_LEFTX:
+							mGamepadLeftStickX = value;
+							break;
+						case SDL_GAMEPAD_AXIS_LEFTY:
+							mGamepadLeftStickY = value;
+							break;
+						case SDL_GAMEPAD_AXIS_RIGHTX:
+							mGamepadRightStickX = value;
+							break;
+						case SDL_GAMEPAD_AXIS_RIGHTY:
+							mGamepadRightStickY = value;
+							break;
+						case SDL_GAMEPAD_AXIS_LEFT_TRIGGER:
+							mGamepadLeftTrigger = (value + 1.0f) * 0.5f; // map from [-1,1] to [0,1]
+							break;
+						case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER:
+							mGamepadRightTrigger = (value + 1.0f) * 0.5f;
+							break;
+						}
+					}
+				}
+				break;
+			case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+			case SDL_EVENT_GAMEPAD_BUTTON_UP:
+				{
+					if (mGamepad && mGamepadInstanceID == event.gbutton.which)
+					{
+						bool pressed = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+						mGamepadButtons[event.gbutton.button] = pressed;
+						if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP) mGamepadDpadUp = pressed;
+						if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN) mGamepadDpadDown = pressed;
+						if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_LEFT) mGamepadDpadLeft = pressed;
+						if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT) mGamepadDpadRight = pressed;
+						// Mark gamepad as active when any button is pressed
+						if (pressed)
+						{
+							SetGamepadActive(true);
+							
+							// Handle global buttons
+							if (event.gbutton.button == SDL_GAMEPAD_BUTTON_START)
+							{
+								// Start: Toggle pause/ESC
+								LawnApp* aLawnApp = (LawnApp*)this;
+								if (aLawnApp->mBoard) aLawnApp->mBoard->KeyDown(KEYCODE_ESCAPE);
+								else if (mWidgetManager) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
+							}
+							else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
+							{
+								// B = Back / Cancel (Only if a dialog/modal is open)
+								if (mWidgetManager && mWidgetManager->mBaseModalWidget)
+								{
+									mWidgetManager->mBaseModalWidget->KeyDown(KEYCODE_ESCAPE);
+								}
+							}
+							else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH)
+							{
+								// A button:
+								// If a Board is active and NOT paused → Board::UpdateGamepad handles it; do nothing here
+								// Otherwise handle Dave dialogue or widget click for menus
+								LawnApp* aLawnApp = (LawnApp*)this;
+								bool boardHandlesInput = (aLawnApp->mBoard && !aLawnApp->mBoard->mPaused && aLawnApp->mGameScene == GameScenes::SCENE_PLAYING);
+								if (!boardHandlesInput)
+								{
+									// Dave dialogue in menus / non-gameplay scenes
+									if (aLawnApp->mCrazyDaveState != CrazyDaveState::CRAZY_DAVE_OFF)
+									{
+										aLawnApp->AdvanceCrazyDaveText();
+									}
+									else if (mWidgetManager && mWidgetManager->mOverWidget && mWidgetManager->mOverWidget->mWidth < 800)
+									{
+										// Don't click sliders with 'A' as they use stick/dpad for adjustment (prevents value jumps)
+										if (dynamic_cast<Slider*>(mWidgetManager->mOverWidget) == nullptr)
+										{
+											// Click on focused menu button
+											Point absPos = mWidgetManager->mOverWidget->GetAbsPos();
+											int cx = absPos.mX + mWidgetManager->mOverWidget->mWidth / 2;
+											int cy = absPos.mY + mWidgetManager->mOverWidget->mHeight / 2;
+											mWidgetManager->MouseDown(cx, cy, 1);
+											mWidgetManager->MouseUp(cx, cy, 1);
+										}
+									}
+									else if (mWidgetManager && mWidgetManager->mFocusWidget)
+									{
+										mWidgetManager->mFocusWidget->KeyDown(KEYCODE_RETURN);
+									}
+								}
+							}
+
+							// If not in a board (gameplay), handle UI navigation
+							if (mWidgetManager && (!((LawnApp*)this)->mBoard || ((LawnApp*)this)->mBoard->mPaused))
+							{
+								bool isSlider = mWidgetManager->mFocusWidget && dynamic_cast<Slider*>(mWidgetManager->mFocusWidget);
+								if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP) mWidgetManager->GamepadMoveFocus(0, -1);
+								else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN) mWidgetManager->GamepadMoveFocus(0, 1);
+								else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_LEFT && !isSlider) mWidgetManager->GamepadMoveFocus(-1, 0);
+								else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT && !isSlider) mWidgetManager->GamepadMoveFocus(1, 0);
+							}
+						}
+					}
+				}
+				break;
 			case SDL_EVENT_TEXT_INPUT:
 				mLastUserInputTick = mLastTimerTime;
 				for (int i = 0; event.text.text[i] != '\0'; i++)
@@ -5753,6 +5942,7 @@ bool SexyAppBase::UpdateAppStep(bool* updated)
 			case SDL_EVENT_KEY_DOWN:
 			case SDL_EVENT_KEY_UP:
 				{
+					SetGamepadActive(false);
 					bool isDown = (event.type == SDL_EVENT_KEY_DOWN);
 					SDL_Keycode sdlKey = event.key.key;
 					KeyCode aKey = KEYCODE_UNKNOWN;
@@ -5904,6 +6094,25 @@ bool SexyAppBase::UpdateApp()
 			return true;
 		
 		SDL_Delay(1);
+	}
+}
+
+void SexyAppBase::PlayGamepadVibration(int durationMs, float lowFreq, float highFreq)
+{
+	if (mGamepad && mGamepadConnected)
+	{
+		Uint16 lowRumble = (Uint16)(lowFreq * 65535.0f);
+		Uint16 highRumble = (Uint16)(highFreq * 65535.0f);
+		SDL_RumbleGamepad(mGamepad, lowRumble, highRumble, durationMs);
+	}
+}
+
+void SexyAppBase::SetGamepadActive(bool theActive)
+{
+	if (mGamepadActive != theActive)
+	{
+		mGamepadActive = theActive;
+		EnforceCursor();
 	}
 }
 
@@ -6545,7 +6754,7 @@ void SexyAppBase::Init()
 	if (gHInstance == NULL)
 		gHInstance = (HINSTANCE)GetModuleHandle(NULL);
 
-	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC))
 	{
 		Popup("SDL_Init Failed");
 		DoExit(0);

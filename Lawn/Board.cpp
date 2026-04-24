@@ -1,4 +1,5 @@
 #include <time.h>
+#include <SDL3/SDL.h>
 #include "ZenGarden.h"
 #include "BoardInclude.h"
 #include "System/Music.h"
@@ -58,6 +59,10 @@ Board::Board(LawnApp* theApp)
 
 	mApp->mEffectSystem->EffectSystemFreeAll();
 	mBoardRandSeed = mApp->mAppRandSeed;
+	mGamepadGridX = 0;
+	mGamepadGridY = 0;
+	mGamepadSeedIndex = -1;
+	mGamepadWasActive = false;
 	if (mApp->IsSurvivalMode())
 	{
 		mBoardRandSeed = Rand();
@@ -149,6 +154,9 @@ Board::Board(LawnApp* theApp)
 	mDanceMode = mApp->mDanceMode;
 	mDaisyMode = mApp->mDaisyMode;
 	mSukhbirMode = mApp->mSukhbirMode;
+	mGamepadGridX = 0;
+	mGamepadGridY = 0;
+	mGamepadWasActive = false;
 	mShowShovel = false;
 	mToolTip = new ToolTipWidget();
 	mDebugFont = new SysFont("Arial Unicode MS", 10, true, false, false);
@@ -279,6 +287,274 @@ void Board::DisposeBoard()
 	mApp->CrazyDaveDie();
 	mApp->mEffectSystem->EffectSystemFreeAll();
 }
+
+void Board::UpdateGamepad()
+{
+	if (!mApp->mGamepadActive)
+	{
+		mGamepadWasActive = false;
+		return;
+	}
+
+	bool* btn     = mApp->mGamepadButtons;
+	bool* prevBtn = mApp->mGamepadButtonsPrev;
+
+	// ── Level intro: only A/South advances the cutscene ──────────────────────
+	if (mApp->mGameScene == GameScenes::SCENE_LEVEL_INTRO)
+	{
+		if (mCutScene && btn[SDL_GAMEPAD_BUTTON_SOUTH] && !prevBtn[SDL_GAMEPAD_BUTTON_SOUTH])
+			mCutScene->MouseDown(0, 0);
+		mGamepadWasActive = false;
+		return;
+	}
+
+	// ── Only run gameplay input while the level is active and unpaused ────────
+	if (mPaused || mApp->mGameScene != GameScenes::SCENE_PLAYING)
+	{
+		mGamepadWasActive = false;
+		return;
+	}
+
+	// ── ABSOLUTE PRIORITY: Crazy Dave dialogue ────────────────────────────────
+	// While Dave is talking, consume ALL gameplay input; only A advances text.
+	if (mApp->mCrazyDaveState != CrazyDaveState::CRAZY_DAVE_OFF)
+	{
+		if (btn[SDL_GAMEPAD_BUTTON_SOUTH] && !prevBtn[SDL_GAMEPAD_BUTTON_SOUTH])
+		{
+			if (IsScaryPotterDaveTalking())
+				mChallenge->AdvanceCrazyDaveDialog();
+			else if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
+				mApp->mZenGarden->AdvanceCrazyDaveDialog();
+			else
+				mApp->AdvanceCrazyDaveText();
+		}
+		return; // consume all other input
+	}
+
+	// ── Grid cursor initialisation ────────────────────────────────────────────
+	if (!mGamepadWasActive)
+	{
+		mGamepadGridX    = MAX_GRID_SIZE_X / 2;
+		mGamepadGridY    = StageHas6Rows() ? (MAX_GRID_SIZE_Y / 2) : ((MAX_GRID_SIZE_Y - 1) / 2);
+		mGamepadWasActive = true;
+	}
+
+	// Enforce clamp just in case level bounds changed
+	int maxYLimit = StageHas6Rows() ? (MAX_GRID_SIZE_Y - 1) : (MAX_GRID_SIZE_Y - 2);
+	mGamepadGridY = ClampInt(mGamepadGridY, 0, maxYLimit);
+
+	// ── Grid movement (D-pad + left stick) ───────────────────────────────────
+	float lx    = mApp->mGamepadLeftStickX;
+	float ly    = mApp->mGamepadLeftStickY;
+	bool  up    = mApp->mGamepadDpadUp    || ly < -0.5f;
+	bool  down  = mApp->mGamepadDpadDown  || ly >  0.5f;
+	bool  left  = mApp->mGamepadDpadLeft  || lx < -0.5f;
+	bool  right = mApp->mGamepadDpadRight || lx >  0.5f;
+
+	static int moveDelay = 0;
+	if (moveDelay > 0) moveDelay--;
+
+	// ── Seed Bank / Tool Selection Toggle (Y button / North) ─────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_NORTH] && !prevBtn[SDL_GAMEPAD_BUTTON_NORTH])
+	{
+		if (mGamepadSeedIndex == -1 && mSeedBank && mSeedBank->mNumPackets > 0)
+		{
+			mGamepadSeedIndex = 0;
+		}
+		else
+		{
+			mGamepadSeedIndex = -1;
+		}
+	}
+
+	if (moveDelay <= 0)
+	{
+		int dx = 0, dy = 0;
+		if      (up)    dy = -1;
+		else if (down)  dy =  1;
+		else if (left)  dx = -1;
+		else if (right) dx =  1;
+
+		if (dx != 0 || dy != 0)
+		{
+			bool inZenGarden = (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM);
+			if (mGamepadSeedIndex != -1 && inZenGarden) // Currently in the Seed Bank (Tools) - ONLY in Zen Garden
+			{
+				if (left)
+				{
+					mGamepadSeedIndex = max(0, mGamepadSeedIndex - 1);
+					moveDelay = 12;
+				}
+				else if (right)
+				{
+					if (mSeedBank)
+						mGamepadSeedIndex = min(mSeedBank->mNumPackets - 1, mGamepadSeedIndex + 1);
+					moveDelay = 12;
+				}
+				else if (down)
+				{
+					mGamepadSeedIndex = -1;
+					moveDelay = 12;
+				}
+			}
+			else // Currently in the Garden Grid / Normal gameplay
+			{
+				mGamepadGridX = ClampInt(mGamepadGridX + dx, 0, MAX_GRID_SIZE_X - 1);
+				int maxY = StageHas6Rows() ? (MAX_GRID_SIZE_Y - 1) : (MAX_GRID_SIZE_Y - 2);
+				mGamepadGridY = ClampInt(mGamepadGridY + dy, 0, maxY);
+				moveDelay = 12;
+			}
+		}
+	}
+	else if (!up && !down && !left && !right)
+	{
+		moveDelay = 0;
+	}
+
+	int pixelX, pixelY;
+	if (mGamepadSeedIndex != -1 && mSeedBank)
+	{
+		// Virtual mouse over the focused seed packet
+		SeedPacket* aPacket = &mSeedBank->mSeedPackets[mGamepadSeedIndex];
+		pixelX = mSeedBank->mX + aPacket->mX + 25;
+		pixelY = mSeedBank->mY + aPacket->mY + 35;
+	}
+	else
+	{
+		pixelX = GridToPixelX(mGamepadGridX, mGamepadGridY) + 40;
+		pixelY = GridToPixelY(mGamepadGridX, mGamepadGridY) + 50;
+	}
+
+	// ── Auto-collect sun and coins near the cursor ───────────────────────────
+	Coin* aCoin = nullptr;
+	while (IterateCoins(aCoin))
+	{
+		if (!aCoin->mIsBeingCollected && !aCoin->mDead)
+		{
+			int dx = aCoin->mX + aCoin->mWidth / 2 - pixelX;
+			int dy = aCoin->mY + aCoin->mHeight / 2 - pixelY;
+			if (dx * dx + dy * dy < 80 * 80) // 80 pixels radius
+			{
+				aCoin->MouseDown(pixelX, pixelY, 1);
+			}
+		}
+	}
+
+	// ── A button: plant / pick up seed ───────────────────────────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_SOUTH] && !prevBtn[SDL_GAMEPAD_BUTTON_SOUTH])
+	{
+		HitResult aHitResult;
+		MouseHitTest(pixelX, pixelY, &aHitResult);
+
+		if (mChallenge->MouseDown(pixelX, pixelY, 1, &aHitResult))
+		{
+			// handled by mini-game (Whack-a-Zombie, Scary Potter, etc.)
+		}
+		else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_BANK ||
+		         mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_USABLE_COIN)
+		{
+			// Plant the seed we already picked up
+			MouseDownWithPlant(pixelX, pixelY, 1);
+		}
+		else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL)
+		{
+			// Pick up the currently highlighted seed
+			if (mSeedBank && mSeedBank->mNumPackets > 0 &&
+			    mGamepadSeedIndex >= 0 && mGamepadSeedIndex < mSeedBank->mNumPackets)
+			{
+				mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadPickUp();
+				mGamepadSeedIndex = -1; // Return focus to the grid to use the tool
+			}
+		}
+		else
+		{
+			// Shovel / other tool
+			MouseDownWithTool(pixelX, pixelY, 1, mCursorObject->mCursorType);
+		}
+	}
+
+	// ── B button: cancel cursor / pick up shovel ─────────────────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_EAST] && !prevBtn[SDL_GAMEPAD_BUTTON_EAST])
+	{
+		if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+			ClearCursor();
+		else if (mShowShovel)
+			PickUpTool(GameObjectType::OBJECT_TYPE_SHOVEL);
+	}
+
+	// ── X button: Cob Cannon fire ─────────────────────────────────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_WEST] && !prevBtn[SDL_GAMEPAD_BUTTON_WEST])
+		MouseDownCobcannonFire(pixelX, pixelY, 1);
+
+	// ── LB/RB: Zen Garden switching ──────────────────────────────────────────
+	if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN)
+	{
+		if ((btn[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] && !prevBtn[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER]) ||
+			(btn[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] && !prevBtn[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER]))
+		{
+			mApp->mZenGarden->GotoNextGarden();
+		}
+	}
+
+	// ── Y button: contextual (Zombiquarium / Last Stand) ─────────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_NORTH] && !prevBtn[SDL_GAMEPAD_BUTTON_NORTH])
+	{
+		if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZOMBIQUARIUM)
+			mChallenge->ZombiquariumMouseDown(pixelX, pixelY);
+		else if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND && mStoreButton &&
+		         mChallenge->mChallengeState != ChallengeState::STATECHALLENGE_LAST_STAND_ONSLAUGHT)
+		{
+			mChallenge->mChallengeState = ChallengeState::STATECHALLENGE_LAST_STAND_ONSLAUGHT;
+			mStoreButton->mBtnNoDraw  = true;
+			mStoreButton->mDisabled   = true;
+			mZombieCountDown          = 10;
+			mZombieCountDownStart     = 10;
+		}
+	}
+
+	// ── LB / RB: navigate seed slots (no pickup, no sound) ───────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] && !prevBtn[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER])
+	{
+		if (mSeedBank && mSeedBank->mNumPackets > 0)
+		{
+			mGamepadSeedIndex--;
+			if (mGamepadSeedIndex < 0)
+				mGamepadSeedIndex = mSeedBank->mNumPackets - 1;
+			mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadSelect();
+		}
+	}
+
+	if (btn[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] && !prevBtn[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER])
+	{
+		if (mSeedBank && mSeedBank->mNumPackets > 0)
+		{
+			mGamepadSeedIndex++;
+			if (mGamepadSeedIndex >= mSeedBank->mNumPackets)
+				mGamepadSeedIndex = 0;
+			mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadSelect();
+		}
+	}
+
+	// ── LT + RT: collect all coins ───────────────────────────────────────────
+	if (mApp->mGamepadLeftTrigger > 0.5f && mApp->mGamepadRightTrigger > 0.5f)
+	{
+		Coin* aCoin = nullptr;
+		while (IterateCoins(aCoin))
+			if (!aCoin->mIsBeingCollected && !aCoin->mDead)
+				aCoin->Collect();
+	}
+
+	// ── Start: pause ─────────────────────────────────────────────────────────
+	if (btn[SDL_GAMEPAD_BUTTON_START] && !prevBtn[SDL_GAMEPAD_BUTTON_START])
+		KeyDown(KEYCODE_ESCAPE);
+
+	// Keep the widget manager aware of our logical cursor position
+	// (so CursorPreview and tooltips follow the grid), but NOT the
+	// software cursor (which is hidden via EnforceCursor when gamepad active).
+	mApp->mWidgetManager->mLastMouseX = pixelX;
+	mApp->mWidgetManager->mLastMouseY = pixelY;
+}
+
 
 bool Board::AreEnemyZombiesOnScreen()
 {
@@ -4936,6 +5212,7 @@ void Board::UpdateGameObjects()
 
 	mCursorPreview->Update();
 	mCursorObject->Update();
+	UpdateGamepad();
 
 	for (int i = 0; i < mSeedBank->mNumPackets; i++)
 	{
@@ -7580,6 +7857,21 @@ void Board::DrawUITop(Graphics* g)
 		DrawProgressMeter(g);
 		DrawLevel(g);
 	}
+
+	// Draw gamepad grid selector
+	bool inZenGarden = (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM);
+	if (mApp->mGamepadActive && mGamepadWasActive && Sexy::IMAGE_BOARD_SELECTOR &&
+		mApp->mGameScene == GameScenes::SCENE_PLAYING && !mPaused && !mApp->IsWhackAZombieLevel() && !inZenGarden)
+	{
+		int selPixelX = GridToPixelX(mGamepadGridX, mGamepadGridY);
+		int selPixelY = GridToPixelY(mGamepadGridX, mGamepadGridY);
+		
+		// Use standard tile dimensions for scaling the selector
+		int tileW = 80;
+		int tileH = StageHasPool() || StageHasRoof() ? 85 : 100;
+		
+		g->DrawImage(Sexy::IMAGE_BOARD_SELECTOR, selPixelX, selPixelY, tileW, tileH);
+	}
 	if (mStoreButton && mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND)
 	{
 		mStoreButton->Draw(g);
@@ -7612,7 +7904,14 @@ void Board::DrawUITop(Graphics* g)
 
 	if (mTimeStopCounter == 0 && mCursorObject->BeginDraw(g))
 	{
-		mCursorObject->Draw(g);
+		// On Gamepad, we only draw the cursor if it's NOT a plant (to avoid double preview)
+		// because the ghost preview on the tile is enough.
+		if (!mApp->mGamepadActive || mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL || 
+			(mCursorObject->mCursorType != CursorType::CURSOR_TYPE_PLANT_FROM_BANK && 
+			 mCursorObject->mCursorType != CursorType::CURSOR_TYPE_PLANT_FROM_USABLE_COIN))
+		{
+			mCursorObject->Draw(g);
+		}
 		mCursorObject->EndDraw(g);
 	}
 
@@ -7842,7 +8141,16 @@ void Board::KeyDown(KeyCode theKey)
 	}
 	else if (theKey == KeyCode::KEYCODE_ESCAPE)
 	{
-		if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL && mCursorObject->mCursorType != CursorType::CURSOR_TYPE_HAMMER)
+		bool startPressed = mApp->mGamepadActive && mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_START];
+		if (startPressed)
+		{
+			if (CanInteractWithBoardButtons() && mApp->mGameScene != GameScenes::SCENE_ZOMBIES_WON)
+			{
+				mApp->SetCursor(CURSOR_POINTER);
+				mApp->DoNewOptions(false);
+			}
+		}
+		else if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL && mCursorObject->mCursorType != CursorType::CURSOR_TYPE_HAMMER)
 		{
 			RefreshSeedPacketFromCursor();
 		}

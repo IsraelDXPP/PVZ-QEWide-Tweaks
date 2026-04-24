@@ -123,6 +123,8 @@ public:
 	bool					KeyChar(SexyChar theChar);
 	bool					KeyDown(KeyCode key);
 	bool					KeyUp(KeyCode key);
+	
+	bool					GamepadMoveFocus(int dx, int dy);
 
 	bool					IsLeftButtonDown();
 	bool					IsMiddleButtonDown();

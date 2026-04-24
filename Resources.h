@@ -224,6 +224,9 @@ namespace Sexy
 	// Init Resources
 	bool ExtractInitResources(ResourceManager *theMgr);
 	extern Image* IMAGE_BLANK;
+	extern Image* IMAGE_BOARD_SELECTOR;
+	extern Image* IMAGE_SEED_SELECTOR;
+	extern Image* IMAGE_SEED_SELECTOR_SHADOW;
 	extern Image* IMAGE_PARTNER_LOGO;
 	extern Image* IMAGE_POPCAP_LOGO;
 
@@ -788,6 +791,7 @@ namespace Sexy
 	enum ResourceId
 	{
 		IMAGE_BLANK_ID,
+		IMAGE_BOARD_SELECTOR_ID,
 		IMAGE_POPCAP_LOGO_ID,
 		IMAGE_PARTNER_LOGO_ID,
 		IMAGE_TITLESCREEN_ID,

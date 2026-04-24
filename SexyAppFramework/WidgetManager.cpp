@@ -1,5 +1,6 @@
 #include "WidgetManager.h"
 #include "Widget.h"
+#include "ButtonWidget.h"
 #include "Graphics.h"
 #include "Image.h"
 #include "KeyCodes.h"
@@ -7,6 +8,8 @@
 #include "SexyAppBase.h"
 #include "PerfTimer.h"
 #include "Debug.h"
+#include <cmath>
+#include <vector>
 
 using namespace Sexy;
 using namespace std;
@@ -807,3 +810,110 @@ bool WidgetManager::KeyUp(KeyCode key)
 	
 	return true;
 }
+
+static void GetFocusableWidgets(WidgetContainer* container, std::vector<Widget*>& list, int offsetX, int offsetY)
+{
+	for (auto it = container->mWidgets.begin(); it != container->mWidgets.end(); ++it)
+	{
+		Widget* w = *it;
+		if (!w->mVisible || w->mDisabled)
+			continue;
+		
+		int absX = offsetX + w->mX;
+		int absY = offsetY + w->mY;
+		
+		if (w->mMouseVisible)
+		{
+			// Check if it's a clickable button. Typically ButtonWidget subclasses.
+			// Popcap games usually have wantsFocus true or they are interactive.
+			if (w->mWidth > 0 && w->mHeight > 0)
+			{
+				list.push_back(w);
+			}
+		}
+		GetFocusableWidgets(w, list, absX, absY);
+	}
+}
+
+bool WidgetManager::GamepadMoveFocus(int dx, int dy)
+{
+	if (dx == 0 && dy == 0) return false;
+
+	Widget* startWidget = mOverWidget;
+	if (!startWidget) startWidget = mFocusWidget;
+	
+	std::vector<Widget*> focusables;
+	GetFocusableWidgets(mBaseModalWidget ? (WidgetContainer*)mBaseModalWidget : (WidgetContainer*)this, focusables, 
+						mBaseModalWidget ? mBaseModalWidget->mX : 0, 
+						mBaseModalWidget ? mBaseModalWidget->mY : 0);
+
+	if (focusables.empty()) return false;
+
+	if (!startWidget)
+	{
+		Widget* target = focusables[0];
+		SetFocus(target);
+		if (mOverWidget != target)
+		{
+			if (mOverWidget) MouseLeave(mOverWidget);
+			mOverWidget = target;
+			MouseEnter(mOverWidget);
+		}
+		return true;
+	}
+
+	Point startPos = startWidget->GetAbsPos();
+	int startCx = startPos.mX + startWidget->mWidth / 2;
+	int startCy = startPos.mY + startWidget->mHeight / 2;
+
+	Widget* bestWidget = nullptr;
+	float bestDist = 1e9f;
+
+	for (Widget* w : focusables)
+	{
+		if (w == startWidget) continue;
+
+		Point wp = w->GetAbsPos();
+		int cx = wp.mX + w->mWidth / 2;
+		int cy = wp.mY + w->mHeight / 2;
+
+		int diffX = cx - startCx;
+		int diffY = cy - startCy;
+
+		// Check if it's in the right direction
+		bool validDirection = false;
+		if (dx > 0 && diffX > std::abs(diffY)) validDirection = true;
+		if (dx < 0 && -diffX > std::abs(diffY)) validDirection = true;
+		if (dy > 0 && diffY > std::abs(diffX)) validDirection = true;
+		if (dy < 0 && -diffY > std::abs(diffX)) validDirection = true;
+
+		if (validDirection)
+		{
+			float dist = std::sqrt((float)diffX*diffX + diffY*diffY);
+			// Favor elements that align better on the perpendicular axis
+			if (dx != 0) dist += std::abs(diffY) * 2.0f;
+			if (dy != 0) dist += std::abs(diffX) * 2.0f;
+
+			if (dist < bestDist)
+			{
+				bestDist = dist;
+				bestWidget = w;
+			}
+		}
+	}
+
+	if (bestWidget)
+	{
+		SetFocus(bestWidget);
+		if (mOverWidget != bestWidget)
+		{
+			if (mOverWidget) MouseLeave(mOverWidget);
+			mOverWidget = bestWidget;
+			MouseEnter(mOverWidget);
+		}
+		return true;
+	}
+
+	return false;
+}
+

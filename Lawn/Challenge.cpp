@@ -5446,7 +5446,9 @@ void Challenge::TreeOfWisdomUpdate()
 
 	for (int i = 5; i >= 0; i--)
 	{
-		Reanimation* aReanimCloud = mApp->ReanimationGet(mReanimClouds[i]);
+		Reanimation* aReanimCloud = mApp->ReanimationTryToGet(mReanimClouds[i]);
+		if (aReanimCloud == nullptr) continue;
+
 		if (mCloudsCounter[i] > 0)
 		{
 			mCloudsCounter[i]--;

@@ -2,6 +2,10 @@
 #include "WidgetManager.h"
 #include "Widget.h"
 #include "Debug.h"
+#include "SexyAppBase.h"
+#include "Slider.h"
+#include "Checkbox.h"
+#include "ButtonWidget.h"
 #include <algorithm>
 
 using namespace Sexy;
@@ -589,6 +593,59 @@ void WidgetContainer::DrawAll(ModalFlags* theFlags, Graphics* g)
 			Graphics aClipG(*g);
 			aClipG.Translate(aWidget->mX, aWidget->mY);					
 			aWidget->DrawAll(theFlags, &aClipG);
+
+			// ── Gamepad focus highlight (Respects Z-Order and Clipping) ──────
+			if (mWidgetManager->mApp->mGamepadActive && aWidget == mWidgetManager->mOverWidget)
+			{
+				if (aWidget->mWidth > 0 && aWidget->mWidth < 600 && aWidget->mHeight > 0)
+				{
+					aClipG.SetDrawMode(Graphics::DRAWMODE_ADDITIVE);
+					aClipG.SetColorizeImages(true);
+					aClipG.SetColor(Color(255, 255, 255, 20)); // Subtle tint
+
+					bool handled = false;
+					ButtonWidget* aBtn = dynamic_cast<ButtonWidget*>(aWidget);
+					if (aBtn && aBtn->mButtonImage)
+					{
+						aBtn->DrawButtonImage(&aClipG, aBtn->mButtonImage, aBtn->mNormalRect, 0, 0);
+						handled = true;
+					}
+					else if (Slider* aSlider = dynamic_cast<Slider*>(aWidget))
+					{
+						if (aSlider->mThumbImage)
+						{
+							int tx, ty;
+							if (aSlider->mHorizontal)
+							{
+								tx = (int)(aSlider->mVal * (aSlider->mWidth - aSlider->mThumbImage->GetWidth())) + aSlider->mThumbOffsetX;
+								ty = (aSlider->mHeight - aSlider->mThumbImage->GetHeight()) / 2;
+							}
+							else
+							{
+								tx = (aSlider->mWidth - aSlider->mThumbImage->GetWidth()) / 2 + aSlider->mThumbOffsetX;
+								ty = (int)(aSlider->mVal * (aSlider->mHeight - aSlider->mThumbImage->GetHeight()));
+							}
+							aClipG.DrawImage(aSlider->mThumbImage, tx, ty);
+							handled = true;
+						}
+					}
+					else if (Checkbox* aCheckbox = dynamic_cast<Checkbox*>(aWidget))
+					{
+						if (aCheckbox->mUncheckedImage)
+						{
+							aClipG.DrawImage(aCheckbox->mUncheckedImage, 0, 0);
+							handled = true;
+						}
+					}
+
+					if (!handled)
+					{
+						aClipG.SetColorizeImages(false);
+						aClipG.FillRect(0, 0, aWidget->mWidth, aWidget->mHeight);
+					}
+				}
+			}
+
 			aWidget->mDirty = false;
 		}
 

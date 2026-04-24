@@ -1,0 +1,25 @@
+Exception: Access Violation (code 0xc0000005) at address 00363D84 in thread 3B88
+Module: LawnProject.exe
+Logical Address: 0001:000A2D84
+
+0019F718 00363D84 std::less<int>::operator()+14
+Params: 18CA1420 00000000 002C137F 002C137F
+
+StackWalk failed (error 299)
+
+EAX:18CA1420 EBX:00DB0000 ECX:00000000 EDX:0C7D1E18 ESI:002C137F EDI:002C137F
+EIP:00363D84 ESP:0019F6C4  EBP:0019F718
+CS:0023 SS:002B DS:002B ES:002B FS:0053 GS:002B
+Flags:00210202
+
+Windows Ver: NT 6.2  Build 9200
+DDraw Ver: 
+DSound Ver: 
+
+Product: PlantsVsZombies
+Version: 1.0.0.1
+Time Loaded: 00:06:16
+Fullscreen: No
+Primary ThreadId: 3B88
+Times Played: 0
+

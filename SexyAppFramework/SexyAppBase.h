@@ -2,6 +2,8 @@
 #define __SEXYAPPBASE_H__
 
 struct SDL_Cursor;  // Forward declaration for SDL3 cursor type
+struct SDL_Gamepad; // Forward declaration for SDL3 gamepad
+// struct SDL_Haptic;  // Forward declaration for SDL3 haptic (force feedback)
 
 #include "Common.h"
 #include "Rect.h"
@@ -336,6 +338,27 @@ namespace Sexy
 		DWORD					mMinVidMemory3D;
 		DWORD					mRecommendedVidMemory3D;
 		CursorWidget*			mCursor;
+
+		// Gamepad support
+		SDL_Gamepad*			mGamepad;
+		int						mGamepadInstanceID;
+		bool					mGamepadConnected;
+		bool					mGamepadActive;			// true if gamepad is being used (overrides mouse)
+		float					mGamepadLeftStickX;
+		float					mGamepadLeftStickY;
+		float					mGamepadRightStickX;
+		float					mGamepadRightStickY;
+		float					mGamepadLeftTrigger;
+		float					mGamepadRightTrigger;
+		bool					mGamepadButtons[32];		// SDL_GAMEPAD_BUTTON_COUNT = 20; 32 for safety
+		bool					mGamepadButtonsPrev[32];
+		bool					mGamepadDpadUp;
+		bool					mGamepadDpadDown;
+		bool					mGamepadDpadLeft;
+		bool					mGamepadDpadRight;
+		int						mGamepadVibrationEffectId;
+		void					PlayGamepadVibration(int durationMs, float lowFreq, float highFreq);
+		void					SetGamepadActive(bool theActive);
 
 		bool					mWidescreenAware;
 		Rect					mScreenBounds;

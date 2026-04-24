@@ -660,6 +660,11 @@ void SeedPacket::Draw(Graphics* g)
 		}
 
 		DrawSeedPacket(g, mOffsetX, 0.0f, mPacketType, mImitaterType, aPercentDark, aGrayness, aDrawCost, true);
+
+		if (mBoard->mApp->mGamepadActive && mBoard->mGamepadSeedIndex == mIndex)
+		{
+			g->DrawImage(Sexy::IMAGE_SEED_SELECTOR, mOffsetX - 4, -4, SEED_PACKET_WIDTH + 8, SEED_PACKET_HEIGHT + 8);
+		}
 	}
 }
 
@@ -705,6 +710,7 @@ bool SeedPacket::CanPickUp()
 
 void SeedPacket::MouseDown(int x, int y, int theClickCount)
 {
+	mBoard->mGamepadSeedIndex = mIndex;
 	if (mBoard->mPaused || mApp->mGameScene != GameScenes::SCENE_PLAYING || mPacketType == SeedType::SEED_NONE)
 	{
 		return;
@@ -853,6 +859,87 @@ void SeedPacket::MouseDown(int x, int y, int theClickCount)
 
 		Deactivate();
 	}
+}
+
+// Called by LB/RB — only moves the gamepad selection cursor, zero side effects
+void SeedPacket::GamepadSelect()
+{
+	mBoard->mGamepadSeedIndex = mIndex;
+}
+
+// Called by A button — validates and picks up with proper audio feedback
+bool SeedPacket::GamepadPickUp()
+{
+	mBoard->mGamepadSeedIndex = mIndex;
+
+	if (mBoard->mPaused || mApp->mGameScene != GameScenes::SCENE_PLAYING || mPacketType == SeedType::SEED_NONE)
+		return false;
+
+	if (mApp->IsSlotMachineLevel())
+		return false;
+
+	SeedType aUseSeedType = mPacketType;
+	if (mPacketType == SeedType::SEED_IMITATER && mImitaterType != SeedType::SEED_NONE)
+		aUseSeedType = mImitaterType;
+
+	if (!mApp->mEasyPlantingCheat)
+	{
+		if (!mActive)
+		{
+			mApp->PlaySample(SOUND_BUZZER);
+			if (mApp->IsFirstTimeAdventureMode() && mBoard->mLevel == 1 && mBoard->mHelpDisplayed[(int)AdviceType::ADVICE_CLICK_ON_SUN])
+				mBoard->DisplayAdvice(_S("[ADVICE_SEED_REFRESH]"), MessageStyle::MESSAGE_STYLE_TUTORIAL_LEVEL1, AdviceType::ADVICE_SEED_REFRESH);
+			return false;
+		}
+
+		int aCost = mBoard->GetCurrentPlantCost(mPacketType, mImitaterType);
+		if (!mBoard->CanTakeSunMoney(aCost) && !mBoard->HasConveyorBeltSeedBank())
+		{
+			mApp->PlaySample(SOUND_BUZZER);
+			mBoard->mOutOfMoneyCounter = 70;
+			if (mApp->IsFirstTimeAdventureMode() && mBoard->mLevel == 1 && mBoard->mHelpDisplayed[(int)AdviceType::ADVICE_CLICK_ON_SUN])
+				mBoard->DisplayAdvice(_S("[ADVICE_CANT_AFFORD_PLANT]"), MessageStyle::MESSAGE_STYLE_TUTORIAL_LEVEL1, AdviceType::ADVICE_CANT_AFFORD_PLANT);
+			return false;
+		}
+
+		if (!mBoard->PlantingRequirementsMet(aUseSeedType))
+		{
+			mApp->PlaySample(SOUND_BUZZER);
+			return false;
+		}
+	}
+
+	// All checks passed — do pickup
+	mBoard->ClearAdvice(AdviceType::ADVICE_CANT_AFFORD_PLANT);
+
+	if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED || mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED_TWIST)
+	{
+		mBoard->mChallenge->BeghouledPacketClicked(this);
+	}
+	else if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZOMBIQUARIUM)
+	{
+		mBoard->mChallenge->ZombiquariumPacketClicked(this);
+	}
+	else
+	{
+		mBoard->mCursorObject->mType = mPacketType;
+		mBoard->mCursorObject->mImitaterType = mImitaterType;
+		mBoard->mCursorObject->mCursorType = CursorType::CURSOR_TYPE_PLANT_FROM_BANK;
+		mBoard->mCursorObject->mSeedBankIndex = mIndex;
+		mApp->PlaySample(SOUND_SEEDLIFT);
+
+		if (mBoard->mTutorialState == TutorialState::TUTORIAL_LEVEL_1_PICK_UP_PEASHOOTER)
+			mBoard->SetTutorialState(TutorialState::TUTORIAL_LEVEL_1_PLANT_PEASHOOTER);
+		else if (mBoard->mTutorialState == TutorialState::TUTORIAL_LEVEL_2_PICK_UP_SUNFLOWER)
+			mBoard->SetTutorialState(mPacketType == SeedType::SEED_SUNFLOWER ? TutorialState::TUTORIAL_LEVEL_2_PLANT_SUNFLOWER : TutorialState::TUTORIAL_LEVEL_2_REFRESH_SUNFLOWER);
+		else if (mBoard->mTutorialState == TutorialState::TUTORIAL_MORESUN_PICK_UP_SUNFLOWER)
+			mBoard->SetTutorialState(mPacketType == SeedType::SEED_SUNFLOWER ? TutorialState::TUTORIAL_MORESUN_PLANT_SUNFLOWER : TutorialState::TUTORIAL_MORESUN_REFRESH_SUNFLOWER);
+		else if (mBoard->mTutorialState == TutorialState::TUTORIAL_WHACK_A_ZOMBIE_PICK_SEED || mBoard->mTutorialState == TutorialState::TUTORIAL_WHACK_A_ZOMBIE_BEFORE_PICK_SEED)
+			mBoard->SetTutorialState(TutorialState::TUTORIAL_WHACK_A_ZOMBIE_COMPLETED);
+
+		Deactivate();
+	}
+	return true;
 }
 
 void SeedPacket::WasPlanted()

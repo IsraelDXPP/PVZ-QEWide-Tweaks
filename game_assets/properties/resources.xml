@@ -61,6 +61,7 @@
 <SetDefaults path="images" idprefix="IMAGE_" />
 <Image id="MOUSE_CURSOR" path="cursor" />
 <Image id="EDITBOX" path="editbox" />
+<Image id="CURSOR_ARROW_P1" path="p1_arrow" />
 <Image id="DIALOG_TOPLEFT" path="dialog_topleft" />
 <Image id="DIALOG_TOPMIDDLE" path="dialog_topmiddle" />
 <Image id="DIALOG_TOPRIGHT" path="dialog_topright" />

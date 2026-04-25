@@ -680,6 +680,8 @@ void Music::MakeSureMusicIsPlaying(MusicTune theMusicTune)
 
 void Music::StartGameMusic()
 {
+	if (mApp == nullptr)
+		mApp = gLawnApp;
 	TOD_ASSERT(mApp->mBoard);
 
 	if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)

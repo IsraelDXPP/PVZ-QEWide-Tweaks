@@ -2,6 +2,7 @@
 #include "Cutscene.h"
 #include "ZenGarden.h"
 #include "../LawnApp.h"
+#include "SeedPacket.h"
 #include "CursorObject.h"
 #include "../Resources.h"
 #include "../Sexy.TodLib/Reanimator.h"
@@ -219,6 +220,12 @@ void CursorPreview::Update()
     }
 
     SeedType aSeedType = mBoard->GetSeedTypeInCursor();
+    if (aSeedType == SeedType::SEED_NONE && mApp->mGamepadActive && mBoard->mGamepadSeedIndex != -1)
+    {
+        SeedPacket* aPacket = &mBoard->mSeedBank->mSeedPackets[mBoard->mGamepadSeedIndex];
+        aSeedType = (aPacket->mPacketType == SeedType::SEED_IMITATER) ? aPacket->mImitaterType : aPacket->mPacketType;
+    }
+
     int aMouseX = mApp->mWidgetManager->mLastMouseX;
     int aMouseY = mApp->mWidgetManager->mLastMouseY;
     mGridX = mBoard->PlantingPixelToGridX(aMouseX, aMouseY, aSeedType);
@@ -226,7 +233,8 @@ void CursorPreview::Update()
     if (mGridX >= 0 && mGridX < MAX_GRID_SIZE_X && mGridY >= 0 && mGridY <= MAX_GRID_SIZE_Y)
     {
         bool aShow = false;
-        if (mBoard->IsPlantInCursor() && mBoard->CanPlantAt(mGridX, mGridY, aSeedType) == PlantingReason::PLANTING_OK)
+        if ((mBoard->IsPlantInCursor() || (mApp->mGamepadActive && mBoard->mGamepadSeedIndex != -1)) && 
+            mBoard->CanPlantAt(mGridX, mGridY, aSeedType) == PlantingReason::PLANTING_OK)
         {
             aShow = true;
         }
@@ -253,6 +261,14 @@ void CursorPreview::Update()
 void CursorPreview::Draw(Graphics* g)
 {
     SeedType aSeedType = mBoard->GetSeedTypeInCursor();
+    SeedType aImitaterType = mBoard->mCursorObject->mImitaterType;
+    if (aSeedType == SeedType::SEED_NONE && mApp->mGamepadActive && mBoard->mGamepadSeedIndex != -1)
+    {
+        SeedPacket* aPacket = &mBoard->mSeedBank->mSeedPackets[mBoard->mGamepadSeedIndex];
+        aSeedType = aPacket->mPacketType;
+        aImitaterType = aPacket->mImitaterType;
+    }
+
     if (aSeedType == SeedType::SEED_NONE)
         return;
 
@@ -297,8 +313,8 @@ void CursorPreview::Draw(Graphics* g)
             aOffsetY = PlantDrawHeightOffset(mBoard, nullptr, aSeedType, mGridX, mGridY);
             aOffsetX = 0.0f;
         }
-
-        Plant::DrawSeedType(g, mBoard->mCursorObject->mType, mBoard->mCursorObject->mImitaterType, DrawVariation::VARIATION_NORMAL, aOffsetX, aOffsetY);
+        
+        Plant::DrawSeedType(g, aSeedType, aImitaterType, DrawVariation::VARIATION_NORMAL, aOffsetX, aOffsetY);
     }
 
     if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_COLUMN)
@@ -308,7 +324,7 @@ void CursorPreview::Draw(Graphics* g)
             if (y != mGridY && mBoard->CanPlantAt(mGridX, y, aSeedType) == PlantingReason::PLANTING_OK)
             {
                 float aOffsetY = 85.0f * (y - mGridY) + PlantDrawHeightOffset(mBoard, nullptr, aSeedType, mGridX, y);
-                Plant::DrawSeedType(g, mBoard->mCursorObject->mType, mBoard->mCursorObject->mImitaterType, DrawVariation::VARIATION_NORMAL, 0.0f, aOffsetY);
+                Plant::DrawSeedType(g, aSeedType, aImitaterType, DrawVariation::VARIATION_NORMAL, 0.0f, aOffsetY);
             }
         }
     }

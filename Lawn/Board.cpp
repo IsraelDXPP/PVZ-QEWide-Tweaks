@@ -4,6 +4,7 @@
 #include "BoardInclude.h"
 #include "System/Music.h"
 #include "System/SaveGame.h"
+#include "../SexyAppFramework/SexyMatrix.h"
 #include "Widget/LawnDialog.h"
 #include "System/PlayerInfo.h"
 #include "System/PoolEffect.h"
@@ -354,18 +355,7 @@ void Board::UpdateGamepad()
 	static int moveDelay = 0;
 	if (moveDelay > 0) moveDelay--;
 
-	// ── Seed Bank / Tool Selection Toggle (Y button / North) ─────────────────
-	if (btn[SDL_GAMEPAD_BUTTON_NORTH] && !prevBtn[SDL_GAMEPAD_BUTTON_NORTH])
-	{
-		if (mGamepadSeedIndex == -1 && mSeedBank && mSeedBank->mNumPackets > 0)
-		{
-			mGamepadSeedIndex = 0;
-		}
-		else
-		{
-			mGamepadSeedIndex = -1;
-		}
-	}
+	// North button logic removed to avoid conflict
 
 	if (moveDelay <= 0)
 	{
@@ -411,19 +401,8 @@ void Board::UpdateGamepad()
 		moveDelay = 0;
 	}
 
-	int pixelX, pixelY;
-	if (mGamepadSeedIndex != -1 && mSeedBank)
-	{
-		// Virtual mouse over the focused seed packet
-		SeedPacket* aPacket = &mSeedBank->mSeedPackets[mGamepadSeedIndex];
-		pixelX = mSeedBank->mX + aPacket->mX + 25;
-		pixelY = mSeedBank->mY + aPacket->mY + 35;
-	}
-	else
-	{
-		pixelX = GridToPixelX(mGamepadGridX, mGamepadGridY) + 40;
-		pixelY = GridToPixelY(mGamepadGridX, mGamepadGridY) + 50;
-	}
+	int pixelX = GridToPixelX(mGamepadGridX, mGamepadGridY) + 40;
+	int pixelY = GridToPixelY(mGamepadGridX, mGamepadGridY) + 50;
 
 	// ── Auto-collect sun and coins near the cursor ───────────────────────────
 	Coin* aCoin = nullptr;
@@ -462,8 +441,11 @@ void Board::UpdateGamepad()
 			if (mSeedBank && mSeedBank->mNumPackets > 0 &&
 			    mGamepadSeedIndex >= 0 && mGamepadSeedIndex < mSeedBank->mNumPackets)
 			{
-				mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadPickUp();
-				mGamepadSeedIndex = -1; // Return focus to the grid to use the tool
+				if (mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadPickUp())
+				{
+					// Picked up successfully, now try to plant immediately
+					MouseDownWithPlant(pixelX, pixelY, 1);
+				}
 			}
 		}
 		else
@@ -479,7 +461,9 @@ void Board::UpdateGamepad()
 		if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
 			ClearCursor();
 		else if (mShowShovel)
+		{
 			PickUpTool(GameObjectType::OBJECT_TYPE_SHOVEL);
+		}
 	}
 
 	// ── X button: Cob Cannon fire ─────────────────────────────────────────────
@@ -517,10 +501,17 @@ void Board::UpdateGamepad()
 	{
 		if (mSeedBank && mSeedBank->mNumPackets > 0)
 		{
-			mGamepadSeedIndex--;
-			if (mGamepadSeedIndex < 0)
-				mGamepadSeedIndex = mSeedBank->mNumPackets - 1;
-			mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadSelect();
+			int startIndex = (mGamepadSeedIndex == -1) ? (mSeedBank->mNumPackets - 1) : (mGamepadSeedIndex - 1);
+			for (int i = 0; i < mSeedBank->mNumPackets; i++)
+			{
+				int idx = (startIndex - i + mSeedBank->mNumPackets) % mSeedBank->mNumPackets;
+				if (mSeedBank->mSeedPackets[idx].mPacketType != SeedType::SEED_NONE)
+				{
+					mGamepadSeedIndex = idx;
+					mSeedBank->mSeedPackets[idx].GamepadSelect();
+					break;
+				}
+			}
 		}
 	}
 
@@ -528,10 +519,17 @@ void Board::UpdateGamepad()
 	{
 		if (mSeedBank && mSeedBank->mNumPackets > 0)
 		{
-			mGamepadSeedIndex++;
-			if (mGamepadSeedIndex >= mSeedBank->mNumPackets)
-				mGamepadSeedIndex = 0;
-			mSeedBank->mSeedPackets[mGamepadSeedIndex].GamepadSelect();
+			int startIndex = (mGamepadSeedIndex == -1) ? 0 : (mGamepadSeedIndex + 1);
+			for (int i = 0; i < mSeedBank->mNumPackets; i++)
+			{
+				int idx = (startIndex + i) % mSeedBank->mNumPackets;
+				if (mSeedBank->mSeedPackets[idx].mPacketType != SeedType::SEED_NONE)
+				{
+					mGamepadSeedIndex = idx;
+					mSeedBank->mSeedPackets[idx].GamepadSelect();
+					break;
+				}
+			}
 		}
 	}
 
@@ -3383,8 +3381,17 @@ void Board::UpdateMousePosition()
 	}
 
 	SeedType aCursorSeedType = GetSeedTypeInCursor();
-	int aMouseX = mApp->mWidgetManager->mLastMouseX - mX;
-	int aMouseY = mApp->mWidgetManager->mLastMouseY - mY;
+	int aMouseX, aMouseY;
+	if (mApp->mGamepadActive)
+	{
+		aMouseX = GridToPixelX(mGamepadGridX, mGamepadGridY) + 40;
+		aMouseY = GridToPixelY(mGamepadGridX, mGamepadGridY) + 50;
+	}
+	else
+	{
+		aMouseX = mApp->mWidgetManager->mLastMouseX - mX;
+		aMouseY = mApp->mWidgetManager->mLastMouseY - mY;
+	}
 
 	if (mApp->IsScaryPotterLevel())
 	{
@@ -3475,8 +3482,18 @@ void Board::UpdateToolTip()
 		return;
 	}
 
-	int aMouseX = mApp->mWidgetManager->mLastMouseX - mX;
-	int aMouseY = mApp->mWidgetManager->mLastMouseY - mY;
+	int aMouseX, aMouseY;
+	if (mApp->mGamepadActive)
+	{
+		// Use grid coordinates for tooltip
+		aMouseX = GridToPixelX(mGamepadGridX, mGamepadGridY) + 40;
+		aMouseY = GridToPixelY(mGamepadGridX, mGamepadGridY) + 50;
+	}
+	else
+	{
+		aMouseX = mApp->mWidgetManager->mLastMouseX - mX;
+		aMouseY = mApp->mWidgetManager->mLastMouseY - mY;
+	}
 
 	if (!CanInteractWithBoardButtons())
 	{
@@ -3572,6 +3589,19 @@ void Board::UpdateToolTip()
 		this->mToolTip->mCenter = true;
 		this->mToolTip->mVisible = true;
 		return;
+	}
+
+	if (mApp->mGamepadActive && aHitResult.mObjectType == GameObjectType::OBJECT_TYPE_NONE)
+	{
+		if (mSeedBank && mGamepadSeedIndex >= 0 && mGamepadSeedIndex < mSeedBank->mNumPackets)
+		{
+			SeedPacket* aPacket = &mSeedBank->mSeedPackets[mGamepadSeedIndex];
+			if (aPacket->mPacketType != SeedType::SEED_NONE)
+			{
+				aHitResult.mObjectType = GameObjectType::OBJECT_TYPE_SEEDPACKET;
+				aHitResult.mObject = aPacket;
+			}
+		}
 	}
 
 	if (aHitResult.mObjectType != GameObjectType::OBJECT_TYPE_SEEDPACKET)
@@ -3775,6 +3805,11 @@ void Board::UpdateToolTip()
 	mToolTip->mX = (SEED_PACKET_WIDTH - mToolTip->mWidth) / 2 + mSeedBank->mX + aSeedPacket->mOffsetX + aSeedPacket->mX;
 	mToolTip->mY = mSeedBank->mY + aSeedPacket->mY + 70;
 	mToolTip->mVisible = true;
+
+	// On Gamepad, if we are hovering a tile with a plant/zombie, prioritize that info over the seed packet
+	// but only if the seed packet was picked up via MouseHitTest (which it was here).
+	// Actually, if we are on Gamepad, we might want the seed tooltip to be always available at the top/bottom
+	// while grid tooltip is near the cursor. For now, let's just make sure it doesn't flicker.
 }
 
 void Board::MouseDownCobcannonFire(int x, int y, int theClickCount)
@@ -6569,6 +6604,18 @@ void Board::DrawGameObjects(Graphics* g)
 	}
 	AddGameObjectRenderItemCursorPreview(aRenderList, aRenderItemCount, RenderObjectType::RENDER_ITEM_CURSOR_PREVIEW, mCursorPreview);
 
+	// Draw gamepad grid selector below plants
+	bool inZenGarden = (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM);
+	if (mApp->mGamepadActive && mGamepadWasActive && Sexy::IMAGE_BOARD_SELECTOR &&
+		mApp->mGameScene == GameScenes::SCENE_PLAYING && !mPaused && !mApp->IsWhackAZombieLevel() && !inZenGarden)
+	{
+		RenderItem& aRenderItem = aRenderList[aRenderItemCount];
+		aRenderItem.mRenderObjectType = RenderObjectType::RENDER_ITEM_ICE; // Reuse ICE type as it's safe to hijack here
+		aRenderItem.mZPos = MakeRenderOrder(RenderLayer::RENDER_LAYER_GROUND, 0, 9000); // High ground layer, but below plants (10000+)
+		aRenderItem.mBoardGridY = -2; // Special value to indicate gamepad selector
+		aRenderItemCount++;
+	}
+
 	TodHesitationTrace("start sort");
 	std::sort(aRenderList, aRenderList + aRenderItemCount, RenderItemSortFunc);
 
@@ -6717,8 +6764,49 @@ void Board::DrawGameObjects(Graphics* g)
 		}
 
 		case RenderObjectType::RENDER_ITEM_ICE:
-			DrawIce(g, aRenderItem.mBoardGridY);
+		{
+			if (aRenderItem.mBoardGridY == -2)
+			{
+				int selPixelX = GridToPixelX(mGamepadGridX, mGamepadGridY);
+				int selPixelY = GridToPixelY(mGamepadGridX, mGamepadGridY);
+				int tileW = 80;
+				int tileH = StageHasPool() || StageHasRoof() ? 85 : 100;
+				
+				if (StageHasRoof())
+				{
+					int nextColoumn = mGamepadGridX < 5 ? mGamepadGridX + 1 : mGamepadGridX;
+					float x2 = GridToPixelX(nextColoumn, mGamepadGridY);
+					float y2 = GridToPixelY(nextColoumn, mGamepadGridY);
+					float mRad = (mGamepadGridX < 5) ? -atan2(y2 - selPixelY, x2 - selPixelX) : 0.0f;
+
+					Sexy::SexyTransform2D aTransform;
+					// Centrar la imagen en el origen para escalar y rotar
+					aTransform.Translate(-Sexy::IMAGE_BOARD_SELECTOR->mWidth / 2.0f, -Sexy::IMAGE_BOARD_SELECTOR->mHeight / 2.0f);
+					aTransform.Scale((float)tileW / Sexy::IMAGE_BOARD_SELECTOR->mWidth, (float)tileH / Sexy::IMAGE_BOARD_SELECTOR->mHeight);
+					aTransform.RotateRad(mRad);
+					
+					// Trasladar al centro visual del tile
+					float centerX = selPixelX + (tileW / 2.0f);
+					float centerY = selPixelY + (tileH / 2.0f);
+					
+					// Si sigue desalineado, ajusta estos valores (offsetX / offsetY):
+					float offsetX = 0.0f; 
+					float offsetY = 0.0f;
+					aTransform.Translate(centerX + offsetX, centerY + offsetY);
+					
+					g->DrawImageMatrix(Sexy::IMAGE_BOARD_SELECTOR, aTransform, 0, 0);
+				}
+				else
+				{
+					g->DrawImage(Sexy::IMAGE_BOARD_SELECTOR, selPixelX, selPixelY, tileW, tileH);
+				}
+			}
+			else
+			{
+				DrawIce(g, aRenderItem.mBoardGridY);
+			}
 			break;
+		}
 
 		case RenderObjectType::RENDER_ITEM_PARTICLE:
 		{
@@ -7858,20 +7946,7 @@ void Board::DrawUITop(Graphics* g)
 		DrawLevel(g);
 	}
 
-	// Draw gamepad grid selector
-	bool inZenGarden = (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN || mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM);
-	if (mApp->mGamepadActive && mGamepadWasActive && Sexy::IMAGE_BOARD_SELECTOR &&
-		mApp->mGameScene == GameScenes::SCENE_PLAYING && !mPaused && !mApp->IsWhackAZombieLevel() && !inZenGarden)
-	{
-		int selPixelX = GridToPixelX(mGamepadGridX, mGamepadGridY);
-		int selPixelY = GridToPixelY(mGamepadGridX, mGamepadGridY);
-		
-		// Use standard tile dimensions for scaling the selector
-		int tileW = 80;
-		int tileH = StageHasPool() || StageHasRoof() ? 85 : 100;
-		
-		g->DrawImage(Sexy::IMAGE_BOARD_SELECTOR, selPixelX, selPixelY, tileW, tileH);
-	}
+	// Selector drawing moved to DrawGameObjects for proper Z-order
 	if (mStoreButton && mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_LAST_STAND)
 	{
 		mStoreButton->Draw(g);

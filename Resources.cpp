@@ -1958,6 +1958,7 @@ bool Sexy::ExtractLoadingSoundsResources(ResourceManager *theManager)
 static void* gResources[] =
 {
 	&IMAGE_BLANK,
+	&IMAGE_BOARD_SELECTOR,
 	&IMAGE_POPCAP_LOGO,
 	&IMAGE_PARTNER_LOGO,
 	&IMAGE_TITLESCREEN,
@@ -2721,6 +2722,7 @@ const char* Sexy::GetStringIdById(int theId)
 	switch(theId)
 	{
 		case IMAGE_BLANK_ID: return "IMAGE_BLANK";
+		case IMAGE_BOARD_SELECTOR_ID: return "IMAGE_BOARD_SELECTOR";
 		case IMAGE_POPCAP_LOGO_ID: return "IMAGE_POPCAP_LOGO";
 		case IMAGE_PARTNER_LOGO_ID: return "IMAGE_PARTNER_LOGO";
 		case IMAGE_TITLESCREEN_ID: return "IMAGE_TITLESCREEN";

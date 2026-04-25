@@ -23,6 +23,8 @@ public:
     bool                mActive;                                    
     bool                mRefreshing;                                
     int                 mTimesUsed;                                 
+    float               mHighlightCounter;                          
+    float               mHighlightScale;                            
 
 public:
     SeedPacket();

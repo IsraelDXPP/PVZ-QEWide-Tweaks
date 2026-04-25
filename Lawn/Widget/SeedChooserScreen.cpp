@@ -656,7 +656,7 @@ void SeedChooserScreen::Update()
 	MarkDirty();
 
 	// Handle Gamepad Navigation
-	if (mApp->mGamepadActive && mChooseState == CHOOSE_NORMAL && mApp->mCrazyDaveState == CrazyDaveState::CRAZY_DAVE_OFF && mBoard->mCutScene->mSeedChoosing)
+	if (mApp->mGamepadActive && mChooseState == CHOOSE_NORMAL && mApp->mCrazyDaveState == CrazyDaveState::CRAZY_DAVE_OFF && mBoard->mCutScene->mSeedChoosing && mApp->GetDialogCount() == 0)
 	{
 		// Gamepad START button triggers "Let's Rock" if enabled
 		if (mApp->mGamepadButtons[SDL_GAMEPAD_BUTTON_START] && !mApp->mGamepadButtonsPrev[SDL_GAMEPAD_BUTTON_START])

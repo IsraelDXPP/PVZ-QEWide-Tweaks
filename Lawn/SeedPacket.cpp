@@ -27,6 +27,8 @@ SeedPacket::SeedPacket()
 	mSlotMachineCountDown = 0;
 	mSlotMachiningNextSeed = SeedType::SEED_NONE;
 	mTimesUsed = 0;
+	mHighlightCounter = 0.0f;
+	mHighlightScale = 1.0f;
 }
 
 void SeedPacket::PickNextSlotMachineSeed()
@@ -179,6 +181,41 @@ void SeedPacket::Update()
 		else if (mSlotMachineCountDown == 0)
 		{
 			mSlotMachineCountDown = 1;
+		}
+	}
+
+	// Gamepad selection pop-scale animation (matches original SeedPacket hover logic)
+	if (mApp->mGamepadActive && !mApp->IsSlotMachineLevel())
+	{
+		const float kAnimDuration = 0.15f;
+		bool aIsSelected = (mBoard->mGamepadSeedIndex == mIndex);
+		if (aIsSelected)
+		{
+			mHighlightCounter = min(mHighlightCounter + 0.01f, kAnimDuration);
+		}
+		else
+		{
+			mHighlightCounter = max(mHighlightCounter - 0.01f, 0.0f);
+		}
+
+		if (aIsSelected || mHighlightCounter > 0.0f)
+		{
+			if (aIsSelected && mHighlightCounter >= kAnimDuration)
+			{
+				mHighlightScale = 1.125f;
+			}
+			else if (aIsSelected)
+			{
+				mHighlightScale = TodAnimateCurveFloatTime(0.0f, kAnimDuration, mHighlightCounter, 1.0f, 1.125f, TodCurves::CURVE_EASE_OUT);
+			}
+			else
+			{
+				mHighlightScale = TodAnimateCurveFloatTime(0.0f, kAnimDuration, mHighlightCounter, 1.0f, 1.125f, TodCurves::CURVE_EASE_OUT);
+			}
+		}
+		else
+		{
+			mHighlightScale = 1.0f;
 		}
 	}
 }
@@ -533,7 +570,12 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 		Graphics aPlantG(*g);
 		aPlantG.SetColor(Color(64, 64, 64, 255));
 		aPlantG.SetColorizeImages(true);
-		aPlantG.ClipRect(x, y, SEED_PACKET_WIDTH, aDarknessHeight);
+		// Scale clip rect dimensions to match the graphics scale transform
+		// (e.g. gamepad pop-scale highlight), otherwise the cooldown overlay
+		// doesn't cover the full scaled seed packet area.
+		int aClipWidth  = FloatRoundToInt(SEED_PACKET_WIDTH * g->mScaleX);
+		int aClipHeight = FloatRoundToInt(aDarknessHeight * g->mScaleY);
+		aPlantG.ClipRect(x, y, aClipWidth, aClipHeight);
 		TodDrawImageCelScaledF(&aPlantG, USE_CONSOLE_SEED_VARIANTS ? Sexy::IMAGE_CONSOLE_SEEDS : Sexy::IMAGE_SEEDS, x, y, aPacketBackground, 0, aPlantG.mScaleX, aPlantG.mScaleY); //WIDETWEAK: Fixed console seed packets rendering as the PC ones when selected or recharging
 		if (aDrawSeedInMiddle)
 		{
@@ -570,7 +612,7 @@ void DrawSeedPacket(Graphics* g, float x, float y, SeedType theSeedType, SeedTyp
 		else
 		{
 			SexyMatrix3 aMatrix;
-			TodScaleTransformMatrix(aMatrix, aTextOffsetX * g->mScaleX + x, aTextOffsetY * g->mScaleY + y, g->mScaleX, g->mScaleY);
+			TodScaleTransformMatrix(aMatrix, aTextOffsetX * g->mScaleX + x + g->mTransX, aTextOffsetY * g->mScaleY + y + g->mTransY, g->mScaleX, g->mScaleY);
 			if (g->mScaleX > 1.8f)
 			{
 				g->SetLinearBlend(false);
@@ -659,11 +701,35 @@ void SeedPacket::Draw(Graphics* g)
 			aGrayness = 128;
 		}
 
-		DrawSeedPacket(g, mOffsetX, 0.0f, mPacketType, mImitaterType, aPercentDark, aGrayness, aDrawCost, true);
+		bool isSelected = (mBoard->mApp->mGamepadActive && mBoard->mGamepadSeedIndex == mIndex);
 
-		if (mBoard->mApp->mGamepadActive && mBoard->mGamepadSeedIndex == mIndex)
+		if (mApp->mGamepadActive && !mApp->IsSlotMachineLevel() && mHighlightScale != 1.0f)
 		{
-			g->DrawImage(Sexy::IMAGE_SEED_SELECTOR, mOffsetX - 4, -4, SEED_PACKET_WIDTH + 8, SEED_PACKET_HEIGHT + 8);
+			// Scale everything (plant + cost) together, identical to how the original
+			// game scales on mouse hover. Use a Graphics copy to avoid polluting g.
+			const float aPivotX = mOffsetX + 25.0f;
+			const float aPivotY = 35.0f;
+			Graphics aScaleG(*g);
+			aScaleG.mScaleX *= mHighlightScale;
+			aScaleG.mScaleY *= mHighlightScale;
+			aScaleG.mScaleOrigX = aPivotX;
+			aScaleG.mScaleOrigY = aPivotY;
+			aScaleG.mTransX += (1.0f - mHighlightScale) * aPivotX;
+			aScaleG.mTransY += (1.0f - mHighlightScale) * aPivotY;
+			
+			DrawSeedPacket(&aScaleG, mOffsetX, 0.0f, mPacketType, mImitaterType, aPercentDark, aGrayness, aDrawCost, true);
+			if (isSelected)
+			{
+				//aScaleG.DrawImage(Sexy::IMAGE_SEED_SELECTOR, mOffsetX - 4, -4, SEED_PACKET_WIDTH + 8, SEED_PACKET_HEIGHT + 8);
+			}
+		}
+		else
+		{
+			DrawSeedPacket(g, mOffsetX, 0.0f, mPacketType, mImitaterType, aPercentDark, aGrayness, aDrawCost, true);
+			if (isSelected)
+			{
+				//g->DrawImage(Sexy::IMAGE_SEED_SELECTOR, mOffsetX - 4, -4, SEED_PACKET_WIDTH + 8, SEED_PACKET_HEIGHT + 8);
+			}
 		}
 	}
 }
@@ -1124,6 +1190,12 @@ void SeedBank::RemoveSeed(int theIndex)
 {
 	TOD_ASSERT(mBoard->HasConveyorBeltSeedBank());
 	TOD_ASSERT(theIndex >= 0 && theIndex < GetNumSeedsOnConveyorBelt());
+
+	if (mBoard->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_BANK &&
+		mBoard->mCursorObject->mSeedBankIndex > theIndex)
+	{
+		mBoard->mCursorObject->mSeedBankIndex--;
+	}
 
 	for (int i = theIndex; i < mNumPackets; i++)
 	{

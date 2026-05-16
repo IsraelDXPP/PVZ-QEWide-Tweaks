@@ -986,6 +986,10 @@ void CutScene::CancelIntro()
 		mCutsceneTime = TimeIntroEnd + mLawnMowerTime + mSodTime + mGraveStoneTime + mCrazyDaveTime + mFogTime + mBossTime + mReadySetPlantTime - 20;
 
 		PlaceLawnItems();
+		if (!mApp->IsChallengeWithoutSeedBank()) //WIDETWEAK: fix conveyor not spawning when skipping the intro while the camera is panned to the zombies wow this is long
+		{
+			mBoard->mSeedBank->Move(SEED_BANK_OFFSET_X_END, 0);
+		}
 		if (mApp->IsStormyNightLevel())
 		{
 			mBoard->mChallenge->mChallengeStateCounter = 0;

@@ -1861,8 +1861,7 @@ void Board::FadeOutLevel()
 		{
 			mApp->PlayFoley(FoleyType::FOLEY_FINAL_FANFARE);
 		}
-		else if (mApp->TrophiesNeedForGoldSunflower() == 1)
-		{
+		else if (mApp->TrophiesNeedForGoldSunflower() == 1 && !mApp->HasBeatenChallenge(mApp->mGameMode)) //WIDETWEAK: fix final fanfare playing when replaying a challenge while only having 1 trophy left to unlock
 			mApp->PlayFoley(FoleyType::FOLEY_FINAL_FANFARE);
 		}
 		else

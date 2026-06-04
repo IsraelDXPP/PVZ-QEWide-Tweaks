@@ -236,6 +236,10 @@ public:
 	int								mCoinBankX;
 	int								mCoinBankY;
 
+	int                             mDebugObjectSelection;
+	int                             mDebugObjectType;
+	int                             mDebugObjectLimit;
+
 public:
 	Board(LawnApp* theApp);
 	virtual ~Board();
@@ -367,6 +371,7 @@ public:
 	static bool						CanZombieSpawnOnLevel(ZombieType theZombieType, int theLevel);
 	bool							IsZombieWaveDistributionOk();
 	void							PickBackground();
+	void							LoadBackgroundDebug(BackgroundType theBackground);
 	void							InitZombieWaves();
 	void							InitSurvivalStage();
 	static /*inline*/ int			MakeRenderOrder(RenderLayer theRenderLayer, int theRow, int theLayerOffset);
@@ -504,5 +509,13 @@ extern bool gShownMoreSunTutorial;
 int									GetRectOverlap(const Rect& rect1, const Rect& rect2);
 bool								GetCircleRectOverlap(int theCircleX, int theCircleY, int theRadius, const Rect& theRect);
 /*inline*/ void						BoardInitForPlayer();
+
+class BackgroundDefinition
+{
+public:
+	BackgroundType					mBackgroundType; //zombie identifier ex: ZOMBIE_NORMAL
+	const SexyChar*					mBackgroundName;
+};
+extern BackgroundDefinition gBackgroundDefs[NUM_ADVENTURE_BACKGROUNDS];
 
 #endif // __BOARD_H__

@@ -5232,6 +5232,9 @@ void Challenge::TreeOfWisdomDraw(Graphics* g)
 void Challenge::TreeOfWisdomInit()
 {
 	mBoard->mShowShovel = false;
+#ifdef SEXY_FUSION_GLOVE
+	mBoard->mShowGlove = false;
+#endif
 	ReanimatorEnsureDefinitionLoaded(REANIM_TREEOFWISDOM, true);
 	Reanimation* aReanimTree = mApp->AddReanimation(0.5f, 0.5f, 0, REANIM_TREEOFWISDOM);
 	aReanimTree->mIsAttachment = true;

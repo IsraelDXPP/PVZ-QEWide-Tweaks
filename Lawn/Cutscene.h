@@ -58,6 +58,9 @@ public:
     void                        KeyDown(KeyCode theKey);
     /*inline*/ void             AdvanceCrazyDaveDialog(bool theJustSkipping);
     void                        ShowShovel();
+#ifdef SEXY_FUSION_GLOVE
+    void                        ShowGlove();
+#endif
     bool                        CanGetPacketUpgrade();
     bool                        CanGetPacketUpgrade(int theIndex);
     void                        FindPlaceForStreetZombies(ZombieType theZombieType, bool theZombieGrid[5][5], int& thePosX, int& thePosY);

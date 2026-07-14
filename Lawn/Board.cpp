@@ -137,6 +137,9 @@ Board::Board(LawnApp* theApp)
 	mGravesCleared = 0;
 	mPlantsEaten = 0;
 	mPlantsShoveled = 0;
+#ifdef SEXY_FUSION_GLOVE
+	mPlantsGloveled = 0;
+#endif
 	mCoinsCollected = 0;
 	mDiamondsCollected = 0;
 	mPottedPlantsCollected = 0;
@@ -159,6 +162,11 @@ Board::Board(LawnApp* theApp)
 	mDaisyMode = mApp->mDaisyMode;
 	mSukhbirMode = mApp->mSukhbirMode;
 	mShowShovel = false;
+#ifdef SEXY_FUSION_GLOVE
+	mShowGlove = false;
+	mGloveCooldown = 0;
+	mGloveCooldownMax = 0;
+#endif
 	mToolTip = new ToolTipWidget();
 	mDebugFont = new SysFont("Arial Unicode MS", 10, true, false, false);
 	mAdvice = new MessageWidget(mApp);
@@ -1405,6 +1413,57 @@ Rect Board::GetShovelButtonRect()
 	return aRect;
 }
 
+#ifdef SEXY_FUSION_GLOVE
+Rect Board::GetGloveButtonRect()
+{
+	Rect shovel = GetShovelButtonRect();
+	Rect aRect(shovel.mX + shovel.mWidth, shovel.mY, Sexy::IMAGE_SHOVELBANK->GetWidth(), Sexy::IMAGE_SEEDBANK->GetHeight());
+	return aRect;
+}
+
+void Board::DrawGlove(Graphics* g)
+{
+	Rect r = GetGloveButtonRect();
+	g->DrawImage(Sexy::IMAGE_SHOVELBANK, r.mX, r.mY);
+
+	int gx = r.mX - 7;
+	int gy = r.mY - 3;
+	int gw = Sexy::IMAGE_ZEN_GARDENGLOVE->mWidth;
+	int gh = Sexy::IMAGE_ZEN_GARDENGLOVE->mHeight;
+
+	if (mGloveCooldown > 0)
+	{
+		g->SetColorizeImages(true);
+		g->SetColor(Color(128, 128, 128));
+		g->DrawImage(Sexy::IMAGE_ZEN_GARDENGLOVE, gx, gy);
+		g->SetColorizeImages(false);
+
+		float percentReady = 1.0f - ((float)mGloveCooldown / (float)mGloveCooldownMax);
+		int readyH = (int)(gh * percentReady);
+
+		if (readyH > 0)
+		{
+			Graphics gclip = *g;
+			gclip.ClipRect(gx, gy + (gh - readyH), gw, readyH);
+			gclip.DrawImage(Sexy::IMAGE_ZEN_GARDENGLOVE, gx, gy);
+		}
+
+		return;
+	}
+
+	if (mCursorObject->mCursorType != CursorType::CURSOR_TYPE_GLOVE)
+	{
+		if (mChallenge->mChallengeState == (ChallengeState)15)
+		{
+			g->SetColorizeImages(true);
+			g->SetColor(GetFlashingColor(mMainCounter, 75));
+		}
+		g->DrawImage(Sexy::IMAGE_ZEN_GARDENGLOVE, gx, gy);
+		g->SetColorizeImages(false);
+	}
+}
+#endif
+
 void Board::GetZenButtonRect(GameObjectType theObjectType, Rect& theRect)
 {
 	if (mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
@@ -1442,6 +1501,9 @@ void Board::GetZenButtonRect(GameObjectType theObjectType, Rect& theRect)
 void Board::InitLevel()
 {
 	mMainCounter = 0;
+#ifdef SEXY_FUSION_GLOVE
+	mShowGlove = false;
+#endif
 	mEnableGraveStones = false;
 	mSodPosition = 0;
 	mPrevBoardResult = mApp->mBoardResult;
@@ -2133,6 +2195,16 @@ void Board::RefreshSeedPacketFromCursor()
 		TOD_ASSERT(mCursorObject->mSeedBankIndex >= 0 && mCursorObject->mSeedBankIndex < mSeedBank->mNumPackets);
 		mSeedBank->mSeedPackets[mCursorObject->mSeedBankIndex].Activate();
 	}
+#ifdef SEXY_FUSION_GLOVE
+	else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
+	{
+		Plant* aPlant = mPlants.DataArrayTryToGet((unsigned int)mCursorObject->mGlovePlantID);
+		if (aPlant)
+		{
+			aPlant->mVisible = true;
+		}
+	}
+#endif
 	ClearCursor();
 }
 
@@ -2297,6 +2369,13 @@ void Board::GetPlantsOnLawn(int theGridX, int theGridY, PlantsOnLawn* thePlantOn
 	Plant* aPlant = nullptr;
 	while (IteratePlants(aPlant))
 	{
+#ifdef SEXY_FUSION_GLOVE
+		if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE &&
+			mPlants.DataArrayTryToGet((unsigned int)mCursorObject->mGlovePlantID) == aPlant)
+		{
+			continue;
+		}
+#endif
 		SeedType aSeedType = aPlant->mSeedType;
 		if (aSeedType == SeedType::SEED_IMITATER && aPlant->mImitaterType != SeedType::SEED_NONE)
 		{
@@ -3331,6 +3410,36 @@ void Board::UpdateToolTip()
 		return;
 	}
 
+#ifdef SEXY_FUSION_GLOVE
+	if (aHitResult.mObjectType == GameObjectType::OBJECT_TYPE_GLOVE &&
+		mApp->mGameMode != GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN &&
+		mApp->mGameMode != GameMode::GAMEMODE_TREE_OF_WISDOM)
+	{
+		bool isCooldown = mGloveCooldown > 0;
+		SexyString aGloveText = _S("[GLOVE_TOOLTIP]");
+
+		if (isCooldown)
+		{
+			float aSecondsLeft = (float)mGloveCooldown / 100.0f;
+			char buffer[16];
+			snprintf(buffer, sizeof(buffer), "%.1f", aSecondsLeft);
+			aGloveText = SexyString(buffer) + _S("s restante");
+			mToolTip->SetWarningText(aGloveText);
+		}
+		else
+		{
+			mToolTip->SetLabel(aGloveText);
+		}
+
+		Rect aGloveButtonRect = GetGloveButtonRect();
+		mToolTip->mX = aGloveButtonRect.mX + 35;
+		mToolTip->mY = aGloveButtonRect.mY + 72;
+		mToolTip->mCenter = true;
+		mToolTip->mVisible = true;
+		return;
+	}
+#endif
+
 	if (aHitResult.mObjectType == GameObjectType::OBJECT_TYPE_NEXT_GARDEN)
 	{
 		mToolTip->SetLabel(_S("[NEXT_GARDEN_TOOLTIP]"));
@@ -3868,7 +3977,74 @@ void Board::MouseDownWithPlant(int x, int y, int theClickCount)
 
 	if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
 	{
+#ifdef SEXY_FUSION_GLOVE
+		if (mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN)
+		{
+			mApp->mZenGarden->MovePlant(mPlants.DataArrayTryToGet(mCursorObject->mGlovePlantID), aGridX, aGridY);
+			ClearCursor();
+			return;
+		}
+
+		// Normal in-game glove: move the plant to its new position
+		Plant* aPlant = mPlants.DataArrayTryToGet(mCursorObject->mGlovePlantID);
+		if (!aPlant)
+		{
+			ClearCursor();
+			return;
+		}
+
+		int aOriginalGridX = aPlant->mPlantCol;
+		int aOriginalGridY = aPlant->mRow;
+		int aPosX = GridToPixelX(aGridX, aGridY);
+		int aPosY = GridToPixelY(aGridX, aGridY);
+		float aDeltaX = aPosX - aPlant->mX;
+		float aDeltaY = aPosY - aPlant->mY;
+
+		aPlant->mX = aPosX;
+		aPlant->mY = aPosY;
+		aPlant->mPlantCol = aGridX;
+		aPlant->mRow = aGridY;
+		aPlant->mStartRow = aGridY;
+		aPlant->mRenderOrder = aPlant->CalcRenderOrder();
+		aPlant->mVisible = true;
+
+		Reanimation* aSleepReanim = mApp->ReanimationTryToGet(aPlant->mSleepingReanimID);
+		if (aSleepReanim)
+		{
+			aSleepReanim->SetPosition(
+				aSleepReanim->mOverlayMatrix.m02 + aDeltaX,
+				aSleepReanim->mOverlayMatrix.m12 + aDeltaY);
+			aSleepReanim->mRenderOrder = MakeRenderOrder(RenderLayer::RENDER_LAYER_PARTICLE, aPlant->mRow, 1000);
+		}
+
+		TodParticleSystem* aParticle = mApp->ParticleTryToGet(aPlant->mParticleID);
+		if (aParticle && aParticle->mEmitterList.mSize)
+		{
+			TodParticleEmitter* aEmitter = aParticle->mParticleHolder->mEmitters.DataArrayTryToGet(
+				(unsigned int)aParticle->mEmitterList.GetHead()->mValue);
+			if (aEmitter)
+			{
+				aParticle->SystemMove(aEmitter->mSystemCenter.x + aDeltaX, aEmitter->mSystemCenter.y + aDeltaY);
+			}
+		}
+
+		if (aGridX != aOriginalGridX || aGridY != aOriginalGridY)
+		{
+			mPlantsGloveled++;
+			mApp->PlayFoley(FoleyType::FOLEY_PLANT);
+			mGloveCooldown = 300;
+			mGloveCooldownMax = 300;
+		}
+		else
+		{
+			mApp->PlayFoley(FoleyType::FOLEY_DROP);
+		}
+
+		ClearCursor();
+		return;
+#else
 		mApp->mZenGarden->MovePlant(mPlants.DataArrayTryToGet(mCursorObject->mGlovePlantID), aGridX, aGridY);
+#endif
 	}
 	else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_WHEEL_BARROW)
 	{
@@ -4056,6 +4232,28 @@ void Board::MouseDownWithTool(int x, int y, int theClickCount, CursorType theCur
 			SetTutorialState(CountPlantByType(SeedType::SEED_PEASHOOTER) == 0 ? TutorialState::TUTORIAL_SHOVEL_COMPLETED : TutorialState::TUTORIAL_SHOVEL_KEEP_DIGGING);
 		}
 	}
+#ifdef SEXY_FUSION_GLOVE
+	else if (theCursorType == CursorType::CURSOR_TYPE_GLOVE)
+	{
+		if (aPlant)
+		{
+			if (aPlant->mSeedType >= 0 && aPlant->mSeedType < (int)SeedType::NUM_SEED_TYPES)
+			{
+				mApp->PlaySample(Sexy::SOUND_TAP);
+				mCursorObject->mCursorType = CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE;
+				mCursorObject->mType = aPlant->mSeedType;
+				mCursorObject->mImitaterType = aPlant->mImitaterType;
+				mCursorObject->mGlovePlantID = (PlantID)mPlants.DataArrayGetID(aPlant);
+				aPlant->mVisible = false;
+				return;
+			}
+			else
+			{
+				mApp->PlayFoley(FoleyType::FOLEY_DROP);
+			}
+		}
+	}
+#endif
 
 	ClearCursor();
 }
@@ -4179,6 +4377,14 @@ bool Board::MouseHitTest(int x, int y, HitResult* theHitResult)
 		theHitResult->mObjectType = GameObjectType::OBJECT_TYPE_SHOVEL;
 		return true;
 	}
+#ifdef SEXY_FUSION_GLOVE
+	Rect aGloveButtonRect = GetGloveButtonRect();
+	if (mShowGlove && aGloveButtonRect.Contains(x, y) && CanInteractWithBoardButtons())
+	{
+		theHitResult->mObjectType = GameObjectType::OBJECT_TYPE_GLOVE;
+		return true;
+	}
+#endif
 
 	if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL || mCursorObject->mCursorType == CursorType::CURSOR_TYPE_HAMMER)
 	{
@@ -4360,8 +4566,25 @@ void Board::PickUpTool(GameObjectType theObjectType)
 		break;
 
 	case GameObjectType::OBJECT_TYPE_GLOVE:
-		mCursorObject->mCursorType = CursorType::CURSOR_TYPE_GLOVE;
-		mApp->PlayFoley(FoleyType::FOLEY_DROP);
+#ifdef SEXY_FUSION_GLOVE
+		if (mApp->mGameMode != GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN && mApp->mGameMode != GameMode::GAMEMODE_TREE_OF_WISDOM)
+		{
+			if (mGloveCooldown <= 0)
+			{
+				mCursorObject->mCursorType = CursorType::CURSOR_TYPE_GLOVE;
+				mApp->PlayFoley(FoleyType::FOLEY_DROP);
+			}
+			else
+			{
+				mApp->PlaySample(Sexy::SOUND_BUZZER);
+			}
+		}
+		else
+#endif
+		{
+			mCursorObject->mCursorType = CursorType::CURSOR_TYPE_GLOVE;
+			mApp->PlayFoley(FoleyType::FOLEY_DROP);
+		}
 		break;
 
 	case GameObjectType::OBJECT_TYPE_MONEY_SIGN:
@@ -5824,6 +6047,12 @@ void Board::Update()
 	{
 		mOutOfMoneyCounter--;
 	}
+#ifdef SEXY_FUSION_GLOVE
+	if (mGloveCooldown > 0)
+	{
+		mGloveCooldown--;
+	}
+#endif
 	if (mShakeCounter > 0)
 	{
 		mShakeCounter--;
@@ -7445,6 +7674,12 @@ void Board::DrawUIBottom(Graphics* g)
 	{
 		DrawShovel(g);
 	}
+#ifdef SEXY_FUSION_GLOVE
+	if (mShowGlove)
+	{
+		DrawGlove(g);
+	}
+#endif
 	if (!StageHasFog())
 	{
 		DrawTopRightUI(g);
@@ -8014,6 +8249,20 @@ void Board::KeyChar(SexyChar theChar)
 			mApp->PlayFoley(FoleyType::FOLEY_DROP);
 		}
 	}
+#ifdef SEXY_FUSION_GLOVE
+	else if (tolower(theChar) == _S('f') && aCanUseKeybinds && mShowGlove)
+	{
+		if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_GLOVE)
+		{
+			ClearCursor();
+			mApp->PlayFoley(FoleyType::FOLEY_DROP);
+		}
+		else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL)
+		{
+			PickUpTool(GameObjectType::OBJECT_TYPE_GLOVE);
+		}
+	}
+#endif
 
 	if (!mApp->mDebugKeysEnabled)
 		return;

@@ -437,6 +437,9 @@ GameOverDialog::GameOverDialog(const SexyString& theMessage, bool theShowChallen
     mMenuButton->Resize(635 - mX + BOARD_ADDITIONAL_WIDTH * 2, -10 - mY, 163, 46);
 
     gLawnApp->mBoard->mShowShovel = false;
+#ifdef SEXY_FUSION_GLOVE
+    gLawnApp->mBoard->mShowGlove = false;
+#endif
     gLawnApp->mBoard->mMenuButton->mBtnNoDraw = true;
 }
 

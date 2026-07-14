@@ -179,6 +179,11 @@ public:
 	AdviceType						mHelpIndex;												
 	bool							mFinalBossKilled;										
 	bool							mShowShovel;											
+#ifdef SEXY_FUSION_GLOVE
+	bool							mShowGlove;
+	int								mGloveCooldown;
+	int								mGloveCooldownMax;
+#endif
 	int								mCoinBankFadeCount;										
 	DebugTextMode					mDebugTextMode;											
 	bool							mLevelComplete;											
@@ -221,6 +226,9 @@ public:
 	int								mGravesCleared;											
 	int								mPlantsEaten;											
 	int								mPlantsShoveled;										
+#ifdef SEXY_FUSION_GLOVE
+	int								mPlantsGloveled;
+#endif
 	int								mCoinsCollected;										
 	int								mDiamondsCollected;										
 	int								mPottedPlantsCollected;									
@@ -437,6 +445,10 @@ public:
 	/*inline*/ void					PutZombieInWave(ZombieType theZombieType, int theWaveNumber, ZombiePicker* theZombiePicker);
 	/*inline*/ void					PutInMissingZombies(int theWaveNumber, ZombiePicker* theZombiePicker);
 	Rect							GetShovelButtonRect();
+#ifdef SEXY_FUSION_GLOVE
+	Rect							GetGloveButtonRect();
+	void							DrawGlove(Graphics* g);
+#endif
 	void							GetZenButtonRect(GameObjectType theObjectType, Rect& theRect);
 	Plant*							NewPlant(int theGridX, int theGridY, SeedType theSeedType, SeedType theImitaterType = SeedType::SEED_NONE);
 	void							DoPlantingEffects(int theGridX, int theGridY, Plant* thePlant);

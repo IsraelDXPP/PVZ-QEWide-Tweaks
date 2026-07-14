@@ -1,5 +1,7 @@
 #pragma once
 
+#define SEXY_FUSION_GLOVE
+
 #define ENUM_VALUE(name, value) name = value,
 #define ENUM_AUTO_VALUE(name) name,
 

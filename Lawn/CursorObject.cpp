@@ -132,6 +132,30 @@ void CursorObject::Draw(Graphics* g)
     case CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE:
     {
         Plant* aPlant = mBoard->mPlants.DataArrayGet((unsigned int)mGlovePlantID);
+#ifdef SEXY_FUSION_GLOVE
+        if (aPlant->mPottedPlantIndex >= 0)
+        {
+            PottedPlant* aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[aPlant->mPottedPlantIndex];
+            if (mBoard->mBackground == BackgroundType::BACKGROUND_MUSHROOM_GARDEN || mBoard->mBackground == BackgroundType::BACKGROUND_ZOMBIQUARIUM)
+            {
+                mApp->mZenGarden->DrawPottedPlant(g, -10.0f, -10.0f, aPottedPlant, 1.0f, false);
+            }
+            else
+            {
+                mApp->mZenGarden->DrawPottedPlant(g, -22.0f, -38.0f, aPottedPlant, 1.0f, true);
+            }
+        }
+        else
+        {
+            float aOffsetX = -22.0f;
+            float aOffsetY = PlantDrawHeightOffset(mBoard, nullptr, aPlant->mSeedType, -1, -1) - 15.0f;
+            if (Plant::IsFlying(aPlant->mSeedType) || aPlant->mSeedType == SeedType::SEED_GRAVEBUSTER)
+            {
+                aOffsetY += 30.0f;
+            }
+            Plant::DrawSeedType(g, aPlant->mSeedType, aPlant->mImitaterType, DrawVariation::VARIATION_NORMAL, aOffsetX, aOffsetY);
+        }
+#else
         PottedPlant* aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[aPlant->mPottedPlantIndex];
         if (mBoard->mBackground == BackgroundType::BACKGROUND_MUSHROOM_GARDEN || mBoard->mBackground == BackgroundType::BACKGROUND_ZOMBIQUARIUM)
         {
@@ -141,7 +165,7 @@ void CursorObject::Draw(Graphics* g)
         {
             mApp->mZenGarden->DrawPottedPlant(g, -22.0f, -38.0f, aPottedPlant, 1.0f, true);
         }
-
+#endif
         break;
     }
 
@@ -264,10 +288,18 @@ void CursorPreview::Draw(Graphics* g)
     {
         aPottedPlant = mApp->mZenGarden->GetPottedPlantInWheelbarrow();
     }
-    else if (mBoard->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
-    {
-        aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[mBoard->mPlants.DataArrayGet((unsigned int)mBoard->mCursorObject->mGlovePlantID)->mPottedPlantIndex];
-    }
+	else if (mBoard->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
+	{
+#ifdef SEXY_FUSION_GLOVE
+		Plant* aGlovePlant = mBoard->mPlants.DataArrayGet((unsigned int)mBoard->mCursorObject->mGlovePlantID);
+		if (aGlovePlant->mPottedPlantIndex >= 0)
+		{
+			aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[aGlovePlant->mPottedPlantIndex];
+		}
+#else
+		aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[mBoard->mPlants.DataArrayGet((unsigned int)mBoard->mCursorObject->mGlovePlantID)->mPottedPlantIndex];
+#endif
+	}
 
     if (aPottedPlant)
     {

@@ -666,6 +666,9 @@ void CutScene::StartLevelIntro()
 	mApp->mSeedChooserScreen->Move(0, SEED_CHOOSER_OFFSET_Y);
 	mApp->mSeedChooserScreen->mMenuButton->mBtnNoDraw = true;
 	mBoard->mShowShovel = false;
+#ifdef SEXY_FUSION_GLOVE
+	mBoard->mShowGlove = false;
+#endif
 	mBoard->mSeedBank->mCutSceneDarken = 255;
 	mPlacedZombies = false;
 	mPreloaded = false;
@@ -1001,6 +1004,9 @@ void CutScene::CancelIntro()
 
 		mBoard->mEnableGraveStones = true;
 		ShowShovel();
+#ifdef SEXY_FUSION_GLOVE
+		ShowGlove();
+#endif
 
 		if (mApp->IsFinalBossLevel())
 		{
@@ -1308,6 +1314,26 @@ void CutScene::ShowShovel()
 	}
 }
 
+#ifdef SEXY_FUSION_GLOVE
+void CutScene::ShowGlove()
+{
+	if (mApp->IsWhackAZombieLevel() ||
+		mApp->IsWallnutBowlingLevel() ||
+		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED ||
+		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_BEGHOULED_TWIST ||
+		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZOMBIQUARIUM ||
+		mApp->mGameMode == GameMode::GAMEMODE_CHALLENGE_ZEN_GARDEN ||
+		mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM ||
+		mApp->IsIZombieLevel())
+		return;
+
+	if (mApp->mPlayerInfo->mPurchases[(int)StoreItem::STORE_ITEM_GARDENING_GLOVE])
+	{
+		mBoard->mShowGlove = true;
+	}
+}
+#endif
+
 bool CutScene::IsInShovelTutorial()
 {
 	return
@@ -1409,6 +1435,9 @@ void CutScene::Update()
 			mBoard->mMenuButton->mBtnNoDraw = false;
 		}
 		ShowShovel();
+#ifdef SEXY_FUSION_GLOVE
+		ShowGlove();
+#endif
 		mApp->StartPlaying();
 		if (mBoard->mFastButton && mApp->mGameMode != GAMEMODE_CHALLENGE_ZEN_GARDEN && mApp->mGameMode != GAMEMODE_TREE_OF_WISDOM)
 		{
@@ -1426,6 +1455,9 @@ void CutScene::StartZombiesWon()
 	mBoard->mMenuButton->mBtnNoDraw = true;
 	mBoard->mFastButton->mBtnNoDraw = true;
 	mBoard->mShowShovel = false;
+#ifdef SEXY_FUSION_GLOVE
+	mBoard->mShowGlove = false;
+#endif
 	mApp->mMusic->StopAllMusic();
 	mBoard->StopAllZombieSounds();
 	mApp->PlaySample(SOUND_LOSEMUSIC);

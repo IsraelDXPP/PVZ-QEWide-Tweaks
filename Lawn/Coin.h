@@ -75,5 +75,13 @@ public:
 
     static /*inline*/ bool  IsMoney(CoinType theType);
 };
+class CoinDefinition
+{
+public:
+    CoinType                mCoinType; //zombie identifier ex: ZOMBIE_NORMAL
+    const SexyChar*         mCoinName;
+};
+extern CoinDefinition gCoinDefs[NUM_COIN_TYPES];
+
 
 #endif

@@ -18,6 +18,7 @@ public:
     ProjectileType          mProjectileType;
     int                     mImageRow;
     int                     mDamage;
+    const SexyChar*         mProjectileName;
 };
 extern ProjectileDefinition gProjectileDefinition[NUM_PROJECTILES];  
 

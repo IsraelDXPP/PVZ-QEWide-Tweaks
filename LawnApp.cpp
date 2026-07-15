@@ -816,13 +816,13 @@ int LawnApp::LawnMessageBox(int theDialogId, const SexyChar* theHeaderName, cons
 	Widget* aOldFocus = mWidgetManager->mFocusWidget;
 
 	LawnDialog* aDialog = (LawnDialog*)DoDialog(theDialogId, true, theHeaderName, theLinesName, theButton1Name, theButtonMode);
-	if (aDialog->mYesButton)
+	if (aDialog->mLawnYesButton) //WIDETWEAK: fix credits popup button text! thank you Electr0
 	{
-		aDialog->mYesButton->mLabel = TodStringTranslate(theButton1Name);
+		aDialog->mLawnYesButton->mLabel = TodStringTranslate(theButton1Name);
 	}
-	if (aDialog->mNoButton)
+	if (aDialog->mLawnNoButton)
 	{
-		aDialog->mNoButton->mLabel = TodStringTranslate(theButton2Name);
+		aDialog->mLawnNoButton->mLabel = TodStringTranslate(theButton2Name);
 	}
 	//aDialog->CalcSize(0, 0);
 

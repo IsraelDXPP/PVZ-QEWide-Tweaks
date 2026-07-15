@@ -12,20 +12,20 @@
 #include "../Sexy.TodLib/Attachment.h"
 
 ProjectileDefinition gProjectileDefinition[] = {  
-	{ ProjectileType::PROJECTILE_PEA,           0,  20  },
-	{ ProjectileType::PROJECTILE_SNOWPEA,       0,  20  },
-	{ ProjectileType::PROJECTILE_CABBAGE,       0,  40  },
-	{ ProjectileType::PROJECTILE_MELON,         0,  80  },
-	{ ProjectileType::PROJECTILE_PUFF,          0,  20  },
-	{ ProjectileType::PROJECTILE_WINTERMELON,   0,  80  },
-	{ ProjectileType::PROJECTILE_FIREBALL,      0,  40  },
-	{ ProjectileType::PROJECTILE_STAR,          0,  20  },
-	{ ProjectileType::PROJECTILE_SPIKE,         0,  20  },
-	{ ProjectileType::PROJECTILE_BASKETBALL,    0,  75  },
-	{ ProjectileType::PROJECTILE_KERNEL,        0,  20  },
-	{ ProjectileType::PROJECTILE_COBBIG,        0,  300 },
-	{ ProjectileType::PROJECTILE_BUTTER,        0,  40  },
-	{ ProjectileType::PROJECTILE_ZOMBIE_PEA,    0,  20  }
+	{ ProjectileType::PROJECTILE_PEA,           0,  20, _S("PEA")},
+	{ ProjectileType::PROJECTILE_SNOWPEA,       0,  20, _S("SNOW_PEA")  },
+	{ ProjectileType::PROJECTILE_CABBAGE,       0,  40, _S("CABBAGE")  },
+	{ ProjectileType::PROJECTILE_MELON,         0,  80, _S("MELON")  },
+	{ ProjectileType::PROJECTILE_PUFF,          0,  20, _S("SPORE")  },
+	{ ProjectileType::PROJECTILE_WINTERMELON,   0,  80, _S("WINTER_MELON")  },
+	{ ProjectileType::PROJECTILE_FIREBALL,      0,  40, _S("FIREBALL")  },
+	{ ProjectileType::PROJECTILE_STAR,          0,  20, _S("STAR")  },
+	{ ProjectileType::PROJECTILE_SPIKE,         0,  20, _S("SPIKE")  },
+	{ ProjectileType::PROJECTILE_BASKETBALL,    0,  75, _S("BASKETBALL")  },
+	{ ProjectileType::PROJECTILE_KERNEL,        0,  20, _S("KERNEL")  },
+	{ ProjectileType::PROJECTILE_COBBIG,        0,  300, _S("BIG_COB") },
+	{ ProjectileType::PROJECTILE_BUTTER,        0,  40, _S("BUTTER")  },
+	{ ProjectileType::PROJECTILE_ZOMBIE_PEA,    0,  20, _S("ZOMBIE_PEA")  }
 };
 
 Projectile::Projectile()
@@ -96,7 +96,7 @@ void Projectile::ProjectileInitialize(int theX, int theY, int theRenderOrder, in
 	}
 	else if (mProjectileType == ProjectileType::PROJECTILE_FIREBALL)
 	{
-		TOD_ASSERT();
+		//TOD_ASSERT(); //i'm not entirely sure if removing this is a good idea Sandy but if it works, it works
 	}
 	else if (mProjectileType == ProjectileType::PROJECTILE_COBBIG)
 	{

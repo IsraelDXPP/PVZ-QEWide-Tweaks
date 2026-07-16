@@ -167,6 +167,9 @@ Board::Board(LawnApp* theApp)
 	mGloveCooldown = 0;
 	mGloveCooldownMax = 0;
 #endif
+#ifdef SEXY_FREE_MALLET
+	mShowMallet = false;
+#endif
 	mToolTip = new ToolTipWidget();
 	mDebugFont = new SysFont("Arial Unicode MS", 10, true, false, false);
 	mAdvice = new MessageWidget(mApp);
@@ -1464,6 +1467,65 @@ void Board::DrawGlove(Graphics* g)
 }
 #endif
 
+#ifdef SEXY_FREE_MALLET
+Rect Board::GetMalletButtonRect()
+{
+	Rect aPrevRect = GetShovelButtonRect();
+#ifdef SEXY_FUSION_GLOVE
+	aPrevRect = GetGloveButtonRect();
+#endif
+	Rect aRect(aPrevRect.mX + aPrevRect.mWidth, aPrevRect.mY, Sexy::IMAGE_SHOVELBANK->GetWidth(), Sexy::IMAGE_SEEDBANK->GetHeight());
+	return aRect;
+}
+
+void Board::DrawMallet(Graphics* g)
+{
+	if (!mShowMallet)
+		return;
+
+	Rect aMalletRect = GetMalletButtonRect();
+	g->DrawImage(Sexy::IMAGE_SHOVELBANK, aMalletRect.mX, aMalletRect.mY);
+
+	int aIconX = aMalletRect.mX - 7;
+	int aIconY = aMalletRect.mY - 3;
+	int aIconW = Sexy::IMAGE_SHOVEL->GetWidth();
+	int aIconH = Sexy::IMAGE_SHOVEL->GetHeight();
+	Rect aSrcRect(0, 0, Sexy::IMAGE_MALLET->GetWidth(), Sexy::IMAGE_MALLET->GetHeight());
+	Rect aDestRect(aIconX, aIconY, aIconW, aIconH);
+
+	bool isGrayed = mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] <= 0 || mChallenge->mMalletCooldownTimer > 0;
+
+	if (isGrayed)
+	{
+		g->SetColorizeImages(true);
+		g->SetColor(Color(128, 128, 128));
+	}
+
+	g->DrawImage(Sexy::IMAGE_MALLET, aDestRect, aSrcRect);
+
+	if (isGrayed && mChallenge->mMalletCooldownTimer > 0 && mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] > 0)
+	{
+		float aPercent = 1.0f - ((float)mChallenge->mMalletCooldownTimer / 5000.0f);
+		int aClippedH = (int)(aIconH * aPercent);
+		if (aClippedH > 0)
+		{
+			Graphics aClipG = *g;
+			aClipG.mClipRect = Rect(aIconX, aIconY + aIconH - aClippedH, aIconW, aClippedH);
+			aClipG.SetColorizeImages(true);
+			aClipG.SetColor(Color::White);
+			aClipG.DrawImage(Sexy::IMAGE_MALLET, aDestRect, aSrcRect);
+		}
+	}
+
+	g->SetColorizeImages(false);
+
+	if (mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] > 0)
+	{
+		TodDrawString(g, StrFormat("x%d", mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE]), aMalletRect.mX + aMalletRect.mWidth / 2, aMalletRect.mY + aMalletRect.mHeight / 2 + 10, Sexy::FONT_DWARVENTODCRAFT12, Color::White, DrawStringJustification::DS_ALIGN_CENTER);
+	}
+}
+#endif
+
 void Board::GetZenButtonRect(GameObjectType theObjectType, Rect& theRect)
 {
 	if (mApp->mGameMode == GameMode::GAMEMODE_TREE_OF_WISDOM)
@@ -1503,6 +1565,9 @@ void Board::InitLevel()
 	mMainCounter = 0;
 #ifdef SEXY_FUSION_GLOVE
 	mShowGlove = false;
+#endif
+#ifdef SEXY_FREE_MALLET
+	mShowMallet = false;
 #endif
 	mEnableGraveStones = false;
 	mSodPosition = 0;
@@ -4385,6 +4450,14 @@ bool Board::MouseHitTest(int x, int y, HitResult* theHitResult)
 		return true;
 	}
 #endif
+#ifdef SEXY_FREE_MALLET
+	Rect aMalletButtonRect = GetMalletButtonRect();
+	if (mShowMallet && aMalletButtonRect.Contains(x, y) && CanInteractWithBoardButtons())
+	{
+		theHitResult->mObjectType = GameObjectType::OBJECT_TYPE_STORE_BUTTON;
+		return true;
+	}
+#endif
 
 	if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL || mCursorObject->mCursorType == CursorType::CURSOR_TYPE_HAMMER)
 	{
@@ -4905,6 +4978,16 @@ void Board::MouseUp(int x, int y, int theClickCount)
 				mApp->DoBackToMain();
 			}
 		}
+#ifdef SEXY_FREE_MALLET
+		else if (mShowMallet)
+		{
+			Rect aMalletRect = GetMalletButtonRect();
+			if (aMalletRect.Contains(x, y))
+			{
+				mChallenge->MalletActivate();
+			}
+		}
+#endif
 	}
 }
 
@@ -7680,6 +7763,12 @@ void Board::DrawUIBottom(Graphics* g)
 		DrawGlove(g);
 	}
 #endif
+#ifdef SEXY_FREE_MALLET
+	if (mShowMallet)
+	{
+		DrawMallet(g);
+	}
+#endif
 	if (!StageHasFog())
 	{
 		DrawTopRightUI(g);
@@ -8260,6 +8349,20 @@ void Board::KeyChar(SexyChar theChar)
 		else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL)
 		{
 			PickUpTool(GameObjectType::OBJECT_TYPE_GLOVE);
+		}
+	}
+#endif
+#ifdef SEXY_FREE_MALLET
+	else if (tolower(theChar) == _S('m') && aCanUseKeybinds && mShowMallet)
+	{
+		if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_HAMMER)
+		{
+			ClearCursor();
+			mApp->PlayFoley(FoleyType::FOLEY_DROP);
+		}
+		else if (mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL)
+		{
+			mChallenge->MalletActivate();
 		}
 	}
 #endif

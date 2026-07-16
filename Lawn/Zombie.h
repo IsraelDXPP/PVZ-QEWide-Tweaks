@@ -118,7 +118,8 @@ public:
     Rect                            mZombieAttackRect;                          
     int                             mChilledCounter;                            
     int                             mButteredCounter;                           
-    int                             mIceTrapCounter;                            
+    int                             mIceTrapCounter;
+    int                             mPostStunCounter;                            
     bool                            mMindControlled;                            
     bool                            mBlowingAway;                               
     bool                            mHasHead;                                   
@@ -293,6 +294,10 @@ public:
     /*inline*/ bool                 IsOnBoard();
     void                            DrawButter(Graphics* g, const ZombieDrawPosition& theDrawPos);
     bool                            IsImmobilizied();
+    bool                            CanBeStunned();
+    void                            ApplyStun();
+    void                            ApplyPostStunned();
+    void                            RemovePostStunned();
     void                            ApplyButter();
     float                           ZombieTargetLeadX(float theTime);
     void                            UpdateZombieImp();

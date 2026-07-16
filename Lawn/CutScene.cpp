@@ -669,6 +669,9 @@ void CutScene::StartLevelIntro()
 #ifdef SEXY_FUSION_GLOVE
 	mBoard->mShowGlove = false;
 #endif
+#ifdef SEXY_FREE_MALLET
+	mBoard->mShowMallet = false;
+#endif
 	mBoard->mSeedBank->mCutSceneDarken = 255;
 	mPlacedZombies = false;
 	mPreloaded = false;
@@ -1007,6 +1010,9 @@ void CutScene::CancelIntro()
 #ifdef SEXY_FUSION_GLOVE
 		ShowGlove();
 #endif
+#ifdef SEXY_FREE_MALLET
+		ShowMallet();
+#endif
 
 		if (mApp->IsFinalBossLevel())
 		{
@@ -1334,6 +1340,16 @@ void CutScene::ShowGlove()
 }
 #endif
 
+#ifdef SEXY_FREE_MALLET
+void CutScene::ShowMallet()
+{
+	if (mApp->IsSurvivalMode() || mApp->mGameMode == GAMEMODE_CHALLENGE_LAST_STAND)
+	{
+		mBoard->mShowMallet = true;
+	}
+}
+#endif
+
 bool CutScene::IsInShovelTutorial()
 {
 	return
@@ -1438,6 +1454,9 @@ void CutScene::Update()
 #ifdef SEXY_FUSION_GLOVE
 		ShowGlove();
 #endif
+#ifdef SEXY_FREE_MALLET
+		ShowMallet();
+#endif
 		mApp->StartPlaying();
 		if (mBoard->mFastButton && mApp->mGameMode != GAMEMODE_CHALLENGE_ZEN_GARDEN && mApp->mGameMode != GAMEMODE_TREE_OF_WISDOM)
 		{
@@ -1457,6 +1476,9 @@ void CutScene::StartZombiesWon()
 	mBoard->mShowShovel = false;
 #ifdef SEXY_FUSION_GLOVE
 	mBoard->mShowGlove = false;
+#endif
+#ifdef SEXY_FREE_MALLET
+	mBoard->mShowMallet = false;
 #endif
 	mApp->mMusic->StopAllMusic();
 	mBoard->StopAllZombieSounds();

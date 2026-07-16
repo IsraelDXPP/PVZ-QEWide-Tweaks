@@ -1,6 +1,7 @@
 #pragma once
 
 #define SEXY_FUSION_GLOVE
+#define SEXY_FREE_MALLET
 
 #define ENUM_VALUE(name, value) name = value,
 #define ENUM_AUTO_VALUE(name) name,
@@ -1173,6 +1174,12 @@ enum StoreItem
     STORE_ITEM_TREE_FOOD,
     STORE_ITEM_FIRSTAID,
     STORE_ITEM_PVZ,
+#ifdef SEXY_FREE_MALLET
+    STORE_ITEM_MALLET_SINGLE,
+    STORE_ITEM_MALLET_PACK_3,
+    STORE_ITEM_MALLET_PACK_6,
+    STORE_ITEM_MALLET_PACK_9,
+#endif
     STORE_ITEM_INVALID = -1
 };
 enum StorePages
@@ -1181,7 +1188,12 @@ enum StorePages
     STORE_PAGE_PLANT_UPGRADES = 1,
     STORE_PAGE_ZEN1 = 2,
     STORE_PAGE_ZEN2 = 3,
+#ifdef SEXY_FREE_MALLET
+    STORE_PAGE_MALLET = 4,
+    NUM_STORE_PAGES = 5
+#else
     NUM_STORE_PAGES = 4
+#endif
 };
 enum TodCurves
 {
@@ -1408,3 +1420,27 @@ enum ParticleSystemID { PARTICLESYSTEMID_NULL };
 enum PlantID { PLANTID_NULL };
 enum ReanimationID { REANIMATIONID_NULL };
 enum ZombieID { ZOMBIEID_NULL };
+
+#ifdef SEXY_FREE_MALLET
+enum MalletState
+{
+	MALLET_IDLE,
+	MALLET_ACTIVE,
+	MALLET_FINISHED
+};
+
+enum MalletTutorialState
+{
+	MALLET_TUTORIAL_NONE = 0,
+	MALLET_TUTORIAL_READY = 31,
+	MALLET_TUTORIAL_ACTIVE = 32,
+	MALLET_TUTORIAL_FINISHED = 33,
+	MALLET_TUTORIAL_ZERO = 34,
+	MALLET_TUTORIAL_ZERO_SHOW = 35
+};
+
+enum GameObjectTypeEx
+{
+	OBJECT_TYPE_MALLET = NUM_GRID_ITEM_TYPES + 1
+};
+#endif

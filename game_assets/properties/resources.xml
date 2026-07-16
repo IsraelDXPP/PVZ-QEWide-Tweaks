@@ -147,6 +147,7 @@
 
 <!-- Misc small items -->
 <Image id="SHOVEL" path="shovel" />
+<Image id="MALLET" path="Mallet" />
 <Image id="SHOVEL_HI_RES" path="shovel_hi_res" />
 <Image id="TOMBSTONES" path="Tombstones" cols="5" rows="4"/>
 <Image id="TOMBSTONE_MOUNDS" path="Tombstone_mounds" cols="5" rows="4"/>

@@ -1164,6 +1164,7 @@ Image* Sexy::IMAGE_SELECTORSCREEN_ZENGARDENHIGHLIGHT;
 Image* Sexy::IMAGE_SHOVEL;
 Image* Sexy::IMAGE_SHOVELBANK;
 Image* Sexy::IMAGE_SHOVEL_HI_RES;
+Image* Sexy::IMAGE_MALLET;
 Image* Sexy::IMAGE_SLOTMACHINE_OVERLAY;
 Image* Sexy::IMAGE_SNOWFLAKES;
 Image* Sexy::IMAGE_SNOWPEA_PARTICLES;
@@ -1594,6 +1595,7 @@ bool Sexy::ExtractLoadingImagesResources(ResourceManager *theManager)
 		IMAGE_ZOMBIE_NOTE_SMALL = aMgr.GetImageThrow("IMAGE_ZOMBIE_NOTE_SMALL");
 		IMAGE_ZOMBIE_SEAWEED = aMgr.GetImageThrow("IMAGE_ZOMBIE_SEAWEED");
 		IMAGE_ZOMBOSS_PARTICLES = aMgr.GetImageThrow("IMAGE_ZOMBOSS_PARTICLES");
+		IMAGE_MALLET = aMgr.GetImageThrow("IMAGE_MALLET");
 	}
 	catch(ResourceManagerException&)
 	{

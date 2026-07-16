@@ -548,6 +548,7 @@ namespace Sexy
 	extern Image* IMAGE_SHOVEL;
 	extern Image* IMAGE_SHOVELBANK;
 	extern Image* IMAGE_SHOVEL_HI_RES;
+	extern Image* IMAGE_MALLET;
 	extern Image* IMAGE_SLOTMACHINE_OVERLAY;
 	extern Image* IMAGE_SNOWFLAKES;
 	extern Image* IMAGE_SNOWPEA_PARTICLES;

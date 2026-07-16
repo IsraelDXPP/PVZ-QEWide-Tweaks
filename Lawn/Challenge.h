@@ -71,6 +71,13 @@ public:
     int                     mScaryPotterPots;                                   
     int                     mRainCounter;                                       
     int                     mTreeOfWisdomTalkIndex;                             
+#ifdef SEXY_FREE_MALLET
+    MalletState             mMalletState;
+    int                     mMalletZombiesHit;
+    int                     mMalletTimer;
+    int                     mMalletPickups;
+    int                     mMalletCooldownTimer;
+#endif
 
 public:
     Challenge();
@@ -231,6 +238,15 @@ public:
     void                    TreeOfWisdomGiveWisdom();
     void                    TreeOfWisdomSayRepeat();
     bool                    TreeOfWisdomCanFeed();
+
+#ifdef SEXY_FREE_MALLET
+    void                    UpdateMallet();
+    void                    MalletActivate();
+    bool                    MouseDownMallet(int theX, int theY);
+    void                    MouseDownCheckMalletStatus(int theX, int theY);
+    bool                    CanPickupMallet();
+    void                    DrawMallet(Graphics* g);
+#endif
 
     GridItem*               GetPortalLeftRight(int theGridX, int theGridY, bool theToLeft = true);
 };

@@ -103,6 +103,7 @@ void Zombie::ZombieInitialize(int theRow, ZombieType theType, bool theVariant, Z
     mChilledCounter = 0;
     mIceTrapCounter = 0;
     mButteredCounter = 0;
+    mPostStunCounter = 0;
     mMindControlled = false;
     mBlowingAway = false;
     mHasHead = true;
@@ -4398,6 +4399,14 @@ void Zombie::UpdatePlaying()
             RemoveButter();
         }
     }
+    if (mPostStunCounter > 0)
+    {
+        mPostStunCounter--;
+        if (mPostStunCounter == 0)
+        {
+            ApplyPostStunned();
+        }
+    }
 
     if (mZombiePhase == ZombiePhase::PHASE_RISING_FROM_GRAVE)
     {
@@ -6335,6 +6344,50 @@ void Zombie::CheckSquish(ZombieAttackType theAttackType)
 bool Zombie::IsImmobilizied()
 {
     return mIceTrapCounter > 0 || mButteredCounter > 0;
+}
+
+bool Zombie::CanBeStunned()
+{
+    if (IsDeadOrDying() || IsFlying() || IsBouncingPogo())
+        return false;
+    if (mZombieType == ZOMBIE_ZAMBONI || mZombieType == ZOMBIE_DOLPHIN_RIDER ||
+        mZombieType == ZOMBIE_BALLOON || mZombieType == ZOMBIE_YETI ||
+        mZombieType == ZOMBIE_BOSS || mZombieType == ZOMBIE_PEA_HEAD ||
+        mZombieType == ZOMBIE_WALLNUT_HEAD || mZombieType == ZOMBIE_JALAPENO_HEAD ||
+        mZombieType == ZOMBIE_GATLING_HEAD || mZombieType == ZOMBIE_SQUASH_HEAD ||
+        mZombieType == ZOMBIE_TALLNUT_HEAD)
+        return false;
+    return true;
+}
+
+void Zombie::ApplyStun()
+{
+    if (!CanBeStunned())
+        return;
+
+    float aPosY = 0.0f;
+    if (mZombieType == ZOMBIE_GARGANTUAR)
+        aPosY = 75.0f;
+    else if (mZombieType == ZOMBIE_IMP)
+        aPosY = 5.0f;
+    AddAttachedReanim(-11, (int)aPosY, REANIM_ZOMBIE_SURPRISE);
+    mPostStunCounter = 100;
+    ApplyAnimRate(0.0f);
+}
+
+void Zombie::ApplyPostStunned()
+{
+    Reanimation* aBodyReanim = mApp->ReanimationTryToGet(mBodyReanimID);
+    if (aBodyReanim)
+    {
+        UpdateAnimSpeed();
+        ApplyAnimRate(aBodyReanim->mAnimRate * 0.5f);
+    }
+}
+
+void Zombie::RemovePostStunned()
+{
+    UpdateAnimSpeed();
 }
 
 bool Zombie::IsMovingAtChilledSpeed()

@@ -26,11 +26,17 @@ static StoreItem gStoreItemSpots[NUM_STORE_PAGES][MAX_PAGE_SPOTS] =
     { STORE_ITEM_PACKET_UPGRADE,    STORE_ITEM_POOL_CLEANER,        STORE_ITEM_RAKE,                STORE_ITEM_ROOF_CLEANER,
       STORE_ITEM_PLANT_GATLINGPEA,  STORE_ITEM_PLANT_TWINSUNFLOWER, STORE_ITEM_PLANT_GLOOMSHROOM,   STORE_ITEM_PLANT_CATTAIL },
     { STORE_ITEM_PLANT_SPIKEROCK,   STORE_ITEM_PLANT_GOLD_MAGNET,   STORE_ITEM_PLANT_WINTERMELON,   STORE_ITEM_PLANT_COBCANNON,
-      STORE_ITEM_PLANT_IMITATER,    STORE_ITEM_FIRSTAID,            STORE_ITEM_INVALID,             STORE_ITEM_INVALID },
+      STORE_ITEM_PLANT_IMITATER,    STORE_ITEM_FIRSTAID,
+      STORE_ITEM_INVALID,           STORE_ITEM_INVALID },
     { STORE_ITEM_POTTED_MARIGOLD_1, STORE_ITEM_POTTED_MARIGOLD_2,   STORE_ITEM_POTTED_MARIGOLD_3,   STORE_ITEM_GOLD_WATERINGCAN,
       STORE_ITEM_FERTILIZER,        STORE_ITEM_BUG_SPRAY,           STORE_ITEM_PHONOGRAPH,          STORE_ITEM_GARDENING_GLOVE },
     { STORE_ITEM_MUSHROOM_GARDEN,   STORE_ITEM_AQUARIUM_GARDEN,     STORE_ITEM_WHEEL_BARROW,        STORE_ITEM_STINKY_THE_SNAIL,
       STORE_ITEM_TREE_OF_WISDOM,    STORE_ITEM_TREE_FOOD,           STORE_ITEM_INVALID,             STORE_ITEM_INVALID }
+#ifdef SEXY_FREE_MALLET
+    ,
+    { STORE_ITEM_MALLET_SINGLE,     STORE_ITEM_MALLET_PACK_3,       STORE_ITEM_MALLET_PACK_6,       STORE_ITEM_MALLET_PACK_9,
+      STORE_ITEM_INVALID,           STORE_ITEM_INVALID,             STORE_ITEM_INVALID,             STORE_ITEM_INVALID }
+#endif
 };
 
 StoreScreenOverlay::StoreScreenOverlay(StoreScreen* theParent)
@@ -191,6 +197,12 @@ bool StoreScreen::IsItemSoldOut(StoreItem theStoreItem)
         return aPlayer->mPurchases[STORE_ITEM_TREE_FOOD] - PURCHASE_COUNT_OFFSET > 10;
     else if (theStoreItem == STORE_ITEM_BONUS_LAWN_MOWER)
         return aPlayer->mPurchases[STORE_ITEM_BONUS_LAWN_MOWER] >= 2;
+#ifdef SEXY_FREE_MALLET
+    else if (theStoreItem == STORE_ITEM_MALLET_PACK_3 || theStoreItem == STORE_ITEM_MALLET_PACK_6 || theStoreItem == STORE_ITEM_MALLET_PACK_9)
+        return aPlayer->mPurchases[STORE_ITEM_MALLET_SINGLE] >= 100;
+    else if (theStoreItem == STORE_ITEM_MALLET_SINGLE)
+        return false;
+#endif
     else if (IsPottedPlant(theStoreItem))
         return mApp->mZenGarden->IsZenGardenFull(true) || aPlayer->mPurchases[theStoreItem] == GetCurrentDaysSince2000();
     else return aPlayer->mPurchases[theStoreItem];
@@ -330,6 +342,23 @@ void StoreScreen::DrawItemIcon(Graphics* g, int theItemPosition, StoreItem theIt
     {
         g->DrawImage(Sexy::IMAGE_STORE_PVZICON, aPosX, aPosY - 9);
     }
+#ifdef SEXY_FREE_MALLET
+    else if (theItemType == STORE_ITEM_MALLET_SINGLE || theItemType == STORE_ITEM_MALLET_PACK_3 || theItemType == STORE_ITEM_MALLET_PACK_6 || theItemType == STORE_ITEM_MALLET_PACK_9)
+    {
+        int aIconW = Sexy::IMAGE_MALLET->GetWidth();
+        int aIconH = Sexy::IMAGE_MALLET->GetHeight();
+        Rect aSrcRect(0, 0, aIconW, aIconH);
+        Rect aDestRect(aPosX, aPosY, 55, 70);
+        g->DrawImage(Sexy::IMAGE_MALLET, aDestRect, aSrcRect);
+        const char* aCountStr = nullptr;
+        if (theItemType == STORE_ITEM_MALLET_SINGLE) aCountStr = "x1";
+        else if (theItemType == STORE_ITEM_MALLET_PACK_3) aCountStr = "x3";
+        else if (theItemType == STORE_ITEM_MALLET_PACK_6) aCountStr = "x6";
+        else if (theItemType == STORE_ITEM_MALLET_PACK_9) aCountStr = "x9";
+        if (aCountStr)
+            TodDrawString(g, aCountStr, aPosX + 56, aPosY + 62, Sexy::FONT_HOUSEOFTERROR16, Color::White, DS_ALIGN_RIGHT);
+    }
+#endif
     else if (theItemType == STORE_ITEM_TREE_FOOD)
     {
         g->DrawImage(Sexy::IMAGE_TREEFOOD, aPosX - 8, aPosY - 2);
@@ -488,7 +517,13 @@ void StoreScreen::Draw(Graphics* g)
             }
         }
 
-        SexyString aPageString = TodReplaceNumberString(TodReplaceNumberString(_S("[STORE_PAGE]"), _S("{PAGE}"), mPage + 1), _S("{NUM_PAGES}"), aNumPages);
+        int aVisiblePageNum = 0;
+        for (StorePages p = STORE_PAGE_SLOT_UPGRADES; p <= mPage; p = (StorePages)(p + 1))
+        {
+            if (IsPageShown(p))
+                aVisiblePageNum++;
+        }
+        SexyString aPageString = TodReplaceNumberString(TodReplaceNumberString(_S("[STORE_PAGE]"), _S("{PAGE}"), aVisiblePageNum), _S("{NUM_PAGES}"), aNumPages);
         TodDrawString(g, aPageString, STORESCREEN_PAGESTRING_X, STORESCREEN_PAGESTRING_Y, Sexy::FONT_BRIANNETOD12, Color(128, 128, 128), DS_ALIGN_CENTER);
     }
 }
@@ -568,6 +603,12 @@ void StoreScreen::UpdateMouse()
                 case STORE_ITEM_TREE_FOOD:              aMessageIndex = 2031;                           break;
                 case STORE_ITEM_FIRSTAID:               aMessageIndex = 2033;                           break;
                 case STORE_ITEM_PVZ:                    aMessageIndex = 2034;                           break;
+#ifdef SEXY_FREE_MALLET
+                case STORE_ITEM_MALLET_SINGLE:                                                            break;
+                case STORE_ITEM_MALLET_PACK_3:                                                            break;
+                case STORE_ITEM_MALLET_PACK_6:                                                            break;
+                case STORE_ITEM_MALLET_PACK_9:                                                            break;
+#endif
                 default:                                TOD_ASSERT();                                   break;
                 }
                 if (mApp->mCrazyDaveMessageIndex != aMessageIndex)
@@ -804,6 +845,9 @@ bool StoreScreen::IsPageShown(StorePages thePage)
     if (mApp->HasFinishedAdventure()) return true;
     if (thePage == STORE_PAGE_PLANT_UPGRADES) return mApp->mPlayerInfo->mLevel >= 42;
     if (thePage == STORE_PAGE_ZEN1) return mApp->mPlayerInfo->mLevel >= 45;
+#ifdef SEXY_FREE_MALLET
+    if (thePage == STORE_PAGE_MALLET) return mApp->mPlayerInfo->mLevel >= 1;
+#endif
     return thePage != STORE_PAGE_ZEN2;
 }
 
@@ -828,7 +872,7 @@ void StoreScreen::ButtonDepress(int theId)
                 mPage = (StorePages)(mPage - 1);
                 if (mPage < STORE_PAGE_SLOT_UPGRADES)
                 {
-                    mPage = STORE_PAGE_ZEN2;
+                    mPage = (StorePages)(NUM_STORE_PAGES - 1);
                 }
             }
             else
@@ -885,6 +929,12 @@ int StoreScreen::GetItemCost(StoreItem theStoreItem)
     case STORE_ITEM_TREE_OF_WISDOM:                     return 1000;
     case STORE_ITEM_TREE_FOOD:                          return 250;
     case STORE_ITEM_FIRSTAID:                           return 200;
+#ifdef SEXY_FREE_MALLET
+    case STORE_ITEM_MALLET_SINGLE:                         return 100;
+    case STORE_ITEM_MALLET_PACK_3:                         return 250;
+    case STORE_ITEM_MALLET_PACK_6:                         return 450;
+    case STORE_ITEM_MALLET_PACK_9:                         return 600;
+#endif
     default: TOD_ASSERT();                              return 0;
     }
 }
@@ -1002,6 +1052,24 @@ void StoreScreen::PurchaseItem(StoreItem theStoreItem)
                 mPottedPlantSpecs.mDrawVariation = (DrawVariation)RandRangeInt(VARIATION_MARIGOLD_WHITE, VARIATION_MARIGOLD_LIGHT_GREEN);
                 mApp->mPlayerInfo->mPurchases[theStoreItem] = GetCurrentDaysSince2000();
             }
+#ifdef SEXY_FREE_MALLET
+            else if (theStoreItem == STORE_ITEM_MALLET_SINGLE)
+            {
+                mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] += 1;
+            }
+            else if (theStoreItem == STORE_ITEM_MALLET_PACK_3)
+            {
+                mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] += 3;
+            }
+            else if (theStoreItem == STORE_ITEM_MALLET_PACK_6)
+            {
+                mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] += 6;
+            }
+            else if (theStoreItem == STORE_ITEM_MALLET_PACK_9)
+            {
+                mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] += 9;
+            }
+#endif
             else
             {
                 TOD_ASSERT(theStoreItem >= STORE_ITEM_PLANT_GATLINGPEA && theStoreItem < (StoreItem)MAX_PURCHASES);

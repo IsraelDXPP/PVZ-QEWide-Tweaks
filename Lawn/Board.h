@@ -184,6 +184,9 @@ public:
 	int								mGloveCooldown;
 	int								mGloveCooldownMax;
 #endif
+#ifdef SEXY_FREE_MALLET
+	bool							mShowMallet;
+#endif
 	int								mCoinBankFadeCount;										
 	DebugTextMode					mDebugTextMode;											
 	bool							mLevelComplete;											
@@ -448,6 +451,10 @@ public:
 #ifdef SEXY_FUSION_GLOVE
 	Rect							GetGloveButtonRect();
 	void							DrawGlove(Graphics* g);
+#endif
+#ifdef SEXY_FREE_MALLET
+	Rect							GetMalletButtonRect();
+	void							DrawMallet(Graphics* g);
 #endif
 	void							GetZenButtonRect(GameObjectType theObjectType, Rect& theRect);
 	Plant*							NewPlant(int theGridX, int theGridY, SeedType theSeedType, SeedType theImitaterType = SeedType::SEED_NONE);

@@ -440,6 +440,9 @@ GameOverDialog::GameOverDialog(const SexyString& theMessage, bool theShowChallen
 #ifdef SEXY_FUSION_GLOVE
     gLawnApp->mBoard->mShowGlove = false;
 #endif
+#ifdef SEXY_FREE_MALLET
+    gLawnApp->mBoard->mShowMallet = false;
+#endif
     gLawnApp->mBoard->mMenuButton->mBtnNoDraw = true;
 }
 

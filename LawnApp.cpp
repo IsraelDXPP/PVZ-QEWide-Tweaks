@@ -2628,6 +2628,8 @@ TodParticleSystem* LawnApp::ParticleGet(ParticleSystemID theParticleID)
 
 TodParticleSystem* LawnApp::ParticleTryToGet(ParticleSystemID theParticleID)
 {
+	if (!mEffectSystem)
+		return nullptr;
 	return mEffectSystem->mParticleHolder->mParticleSystems.DataArrayTryToGet((unsigned int)theParticleID);
 }
 
@@ -2638,6 +2640,8 @@ Reanimation* LawnApp::ReanimationGet(ReanimationID theReanimationID)
 
 Reanimation* LawnApp::ReanimationTryToGet(ReanimationID theReanimationID)
 {
+	if (!mEffectSystem)
+		return nullptr;
 	return mEffectSystem->mReanimationHolder->mReanimations.DataArrayTryToGet((unsigned int)theReanimationID);
 }
 

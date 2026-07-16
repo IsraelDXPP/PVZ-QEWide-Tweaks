@@ -259,6 +259,9 @@ void ZenGarden::ZenGardenInitLevel(bool theJustSwitchingGardens)
 #ifdef SEXY_FUSION_GLOVE
     mBoard->mShowGlove = false;
 #endif
+#ifdef SEXY_FREE_MALLET
+    mBoard->mShowMallet = false;
+#endif
     for (int i = 0; i < mApp->mPlayerInfo->mNumPottedPlants; i++)
     {
         PottedPlant* aPottedPlant = PottedPlantFromIndex(i);

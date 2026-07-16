@@ -312,6 +312,13 @@ Challenge::Challenge()
 	memset(mBeghouledEated, 0, sizeof(mBeghouledEated));
 	for (int i = 0; i < (int)BeghouledUpgrade::NUM_BEGHOULED_UPGRADES; i++)
 		mBeghouledPurcasedUpgrade[i] = false;
+#ifdef SEXY_FREE_MALLET
+	mMalletState = MALLET_IDLE;
+	mMalletZombiesHit = 0;
+	mMalletTimer = 0;
+	mMalletPickups = 0;
+	mMalletCooldownTimer = 0;
+#endif
 
 	if (mApp->mBoard && mApp->mGameMode == GAMEMODE_CHALLENGE_SLOT_MACHINE)
 	{
@@ -451,6 +458,10 @@ void Challenge::StartLevel()
 	}
 	if (mApp->IsSurvivalMode() && mSurvivalStage == 0)
 	{
+#ifdef SEXY_FREE_MALLET
+		if (mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] <= 0)
+			mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] = 5;
+#endif
 		SexyString aMessage =
 			mApp->IsSurvivalNormal(aGameMode) ? TodReplaceNumberString(_S("[ADVICE_SURVIVE_FLAGS]"), _S("{FLAGS}"), SURVIVAL_NORMAL_FLAGS) :
 			mApp->IsSurvivalHard(aGameMode) ? TodReplaceNumberString(_S("[ADVICE_SURVIVE_FLAGS]"), _S("{FLAGS}"), SURVIVAL_HARD_FLAGS) : 
@@ -1289,6 +1300,9 @@ bool Challenge::MouseDown(int x, int y, int theClickCount, HitResult* theHitResu
 		ScaryPotterMalletPot((GridItem*)theHitResult->mObject);
 		return true;
 	}
+#ifdef SEXY_FREE_MALLET
+	MouseDownCheckMalletStatus(x, y);
+#endif
 
 	return false;
 }
@@ -1324,6 +1338,12 @@ void Challenge::ClearCursor()
 	{
 		mBoard->mCursorObject->mCursorType = CURSOR_TYPE_HAMMER;
 	}
+#ifdef SEXY_FREE_MALLET
+	if (mApp->IsSurvivalMode() && mMalletState == MALLET_ACTIVE && !mBoard->HasLevelAwardDropped())
+	{
+		mBoard->mCursorObject->mCursorType = CURSOR_TYPE_HAMMER;
+	}
+#endif
 }
 
 bool Challenge::UpdateBeghouledPlant(Plant* thePlant)
@@ -2128,6 +2148,12 @@ void Challenge::Update()
 	{
 		WhackAZombieUpdate();
 	}
+#ifdef SEXY_FREE_MALLET
+	if (mApp->IsSurvivalMode())
+	{
+		UpdateMallet();
+	}
+#endif
 	if (mApp->IsIZombieLevel())
 	{
 		IZombieUpdate();
@@ -5235,6 +5261,9 @@ void Challenge::TreeOfWisdomInit()
 #ifdef SEXY_FUSION_GLOVE
 	mBoard->mShowGlove = false;
 #endif
+#ifdef SEXY_FREE_MALLET
+	mBoard->mShowMallet = false;
+#endif
 	ReanimatorEnsureDefinitionLoaded(REANIM_TREEOFWISDOM, true);
 	Reanimation* aReanimTree = mApp->AddReanimation(0.5f, 0.5f, 0, REANIM_TREEOFWISDOM);
 	aReanimTree->mIsAttachment = true;
@@ -5549,3 +5578,132 @@ bool Challenge::TreeOfWisdomCanFeed()
 
 	return true;
 }
+
+#ifdef SEXY_FREE_MALLET
+void Challenge::MalletActivate()
+{
+	if (mMalletState == MALLET_ACTIVE)
+		return;
+	if (mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE] <= 0)
+		return;
+	if (mMalletCooldownTimer > 0)
+		return;
+
+	mApp->mPlayerInfo->mPurchases[STORE_ITEM_MALLET_SINGLE]--;
+	mMalletState = MALLET_ACTIVE;
+	mMalletZombiesHit = 0;
+	mMalletTimer = 500;
+	mMalletCooldownTimer = 5000;
+	mBoard->mCursorObject->mCursorType = CURSOR_TYPE_HAMMER;
+	mApp->PlayFoley(FOLEY_SWING);
+	ReanimatorEnsureDefinitionLoaded(REANIM_HAMMER, true);
+	Reanimation* aHammerReanim = mApp->AddReanimation(-25.0f, 16.0f, 0, REANIM_HAMMER);
+	aHammerReanim->mIsAttachment = true;
+	aHammerReanim->PlayReanim("anim_whack_zombie", REANIM_PLAY_ONCE_AND_HOLD, 0, 0.0f);
+	aHammerReanim->mAnimTime = 0.0f;
+	mBoard->mCursorObject->mReanimCursorID = mApp->ReanimationGetID(aHammerReanim);
+
+	mApp->mMusic->MakeSureMusicIsPlaying(MUSIC_TUNE_MINIGAME_LOONBOON);
+
+	ReanimatorEnsureDefinitionLoaded(REANIM_ZOMBIE_SURPRISE, true);
+	Zombie* aZombie = nullptr;
+	while (mBoard->IterateZombies(aZombie))
+	{
+		if (!aZombie->IsDeadOrDying() && aZombie->IsOnBoard() && !aZombie->IsFlying())
+		{
+			aZombie->ApplyStun();
+		}
+	}
+}
+
+void Challenge::UpdateMallet()
+{
+	if (!mApp->IsSurvivalMode() && mApp->mGameMode != GAMEMODE_CHALLENGE_LAST_STAND)
+		return;
+
+	if (mMalletCooldownTimer > 0)
+		mMalletCooldownTimer--;
+
+	if (mMalletState == MALLET_ACTIVE)
+	{
+		mMalletTimer--;
+		if (mMalletZombiesHit > 50 || mMalletTimer < 0 || mBoard->HasLevelAwardDropped())
+		{
+			mMalletState = MALLET_FINISHED;
+			mApp->mMusic->StartGameMusic();
+			if (mBoard->mCursorObject->mCursorType == CURSOR_TYPE_HAMMER)
+				mBoard->ClearCursor();
+		}
+	}
+}
+
+bool Challenge::MouseDownMallet(int theX, int theY)
+{
+	if (mMalletState != MALLET_ACTIVE)
+		return false;
+
+	Reanimation* aHammerReanim = mApp->ReanimationTryToGet(mBoard->mCursorObject->mReanimCursorID);
+	if (aHammerReanim)
+		aHammerReanim->mAnimTime = 0.0f;
+	mApp->PlayFoley(FOLEY_SWING);
+
+	Zombie* aZombie = nullptr;
+	Zombie* aTopZombie = nullptr;
+	while (mBoard->IterateZombies(aZombie))
+	{
+		if (!aZombie->IsDeadOrDying())
+		{
+			Rect aZombieRect = aZombie->GetZombieRect();
+			if (GetCircleRectOverlap(theX, theY - 20, 45, aZombieRect))
+			{
+				if (aTopZombie == nullptr || aZombie->mRenderOrder >= aTopZombie->mRenderOrder)
+				{
+					aTopZombie = aZombie;
+				}
+			}
+		}
+	}
+
+	if (aTopZombie)
+	{
+		if (aTopZombie->mHelmType != HELMTYPE_NONE)
+		{
+			if (aTopZombie->mHelmType == HELMTYPE_PAIL)
+				mApp->PlayFoley(FOLEY_SHIELD_HIT);
+			else if (aTopZombie->mHelmType == HELMTYPE_TRAFFIC_CONE)
+				mApp->PlayFoley(FOLEY_PLASTIC_HIT);
+			aTopZombie->TakeHelmDamage(700, 0U);
+		}
+		else if (aTopZombie->mShieldType != SHIELDTYPE_NONE)
+		{
+			if (aTopZombie->mShieldType == SHIELDTYPE_NEWSPAPER)
+				mApp->PlayFoley(FOLEY_NEWSPAPER_RIP);
+			else
+				mApp->PlayFoley(FOLEY_SHIELD_HIT);
+			aTopZombie->TakeShieldDamage(700, 0U);
+		}
+		else
+		{
+			mApp->PlayFoley(FOLEY_BONK);
+			mApp->AddTodParticle(theX - 3, theY + 9, RENDER_LAYER_ABOVE_UI, PARTICLE_POW);
+			aTopZombie->TakeDamage(700, 0x40U);
+		}
+		mMalletZombiesHit++;
+		return true;
+	}
+
+	return false;
+}
+
+void Challenge::MouseDownCheckMalletStatus(int theX, int theY)
+{
+	if (mBoard->HasLevelAwardDropped())
+		return;
+	if (mMalletState != MALLET_ACTIVE)
+		return;
+	if (mBoard->mCursorObject->mCursorType != CURSOR_TYPE_HAMMER)
+		return;
+
+	MouseDownMallet(theX, theY);
+}
+#endif

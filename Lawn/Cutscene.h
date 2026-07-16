@@ -61,6 +61,9 @@ public:
 #ifdef SEXY_FUSION_GLOVE
     void                        ShowGlove();
 #endif
+#ifdef SEXY_FREE_MALLET
+    void                        ShowMallet();
+#endif
     bool                        CanGetPacketUpgrade();
     bool                        CanGetPacketUpgrade(int theIndex);
     void                        FindPlaceForStreetZombies(ZombieType theZombieType, bool theZombieGrid[5][5], int& thePosX, int& thePosY);

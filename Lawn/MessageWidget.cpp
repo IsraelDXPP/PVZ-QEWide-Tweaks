@@ -17,15 +17,22 @@ MessageWidget::MessageWidget(LawnApp* theApp)
 	mLabelNext[0] = _S('\0');
 	mMessageStyleNext = MessageStyle::MESSAGE_STYLE_OFF;
 	mSlideOffTime = 100;
-	memset(mTextReanimID, (int)ReanimationID::REANIMATIONID_NULL, MAX_MESSAGE_LENGTH);
+	for (int i = 0; i < MAX_MESSAGE_LENGTH; i++)
+	{
+		mTextReanimID[i] = ReanimationID::REANIMATIONID_NULL;
+	}
 }
 
 void MessageWidget::ClearReanim()
 {
+	if (!mApp)
+		return;
+
 	for (int i = 0; i < MAX_MESSAGE_LENGTH; i++)
 	{
 		if (mTextReanimID[i] == ReanimationID::REANIMATIONID_NULL)
 			continue;
+
 		Reanimation* aReanim = mApp->ReanimationTryToGet(mTextReanimID[i]);
 		if (aReanim)
 		{

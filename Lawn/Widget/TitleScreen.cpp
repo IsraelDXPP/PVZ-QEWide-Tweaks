@@ -11,6 +11,9 @@
 #include "../../Sexy.TodLib/Reanimator.h"
 #include "../../GameConstants.h"
 #include "../System/Music.h"
+#ifdef SEXY_CONSOLE
+#include <cmath>
+#endif
 
 TitleScreen::TitleScreen(LawnApp* theApp)
 {
@@ -125,6 +128,62 @@ void TitleScreen::Draw(Graphics* g)
 		return;
 	}
 
+#ifdef SEXY_CONSOLE
+	if (mTitleState == TitleState::TITLESTATE_ESRB)
+	{
+		g->SetColor(Color::Black);
+		g->FillRect(0, 0, mWidth, mHeight);
+
+		int anAlpha = TodAnimateCurve(30, 0, mTitleStateCounter, 255, 0, TodCurves::CURVE_LINEAR);
+		g->SetColorizeImages(true);
+		g->SetColor(Color(255, 255, 255, anAlpha));
+		if (IMAGE_ESRB_RATING)
+		{
+			float scaleH = mHeight * 0.65f;
+			float drawW = scaleH * ((float)IMAGE_ESRB_RATING->mWidth / (float)IMAGE_ESRB_RATING->mHeight);
+			int drawX = (int)(mWidth / 2.0f - drawW * 0.5f);
+			int drawY = (int)(mHeight / 2.0f - scaleH * 0.5f);
+			g->DrawImage(IMAGE_ESRB_RATING, drawX, drawY, (int)drawW, (int)scaleH);
+		}
+
+		int fadeOutAlpha = TodAnimateCurve(0, 30, mTitleStateDuration - mTitleStateCounter, 255, 0, TodCurves::CURVE_LINEAR);
+		g->SetColor(Color(255, 255, 255, fadeOutAlpha));
+		g->FillRect(0, 0, mWidth, mHeight);
+		g->SetColorizeImages(false);
+
+		return;
+	}
+
+	if (mTitleState == TitleState::TITLESTATE_GUIDE_LOGO)
+	{
+		g->SetColor(Color::Black);
+		g->FillRect(0, 0, mWidth, mHeight);
+
+		int anAlpha = TodAnimateCurve(30, 0, mTitleStateCounter, 255, 0, TodCurves::CURVE_LINEAR);
+		g->SetColorizeImages(true);
+		g->SetColor(Color(255, 255, 255, anAlpha));
+		if (IMAGE_GUIDE)
+		{
+			float scaleH = (float)IMAGE_GUIDE->mHeight;
+			if (scaleH < mHeight * 0.45f)
+			{
+				scaleH = mHeight * 0.5f;
+			}
+			float drawW = scaleH * ((float)IMAGE_GUIDE->mWidth / (float)IMAGE_GUIDE->mHeight);
+			int drawX = (int)(mWidth / 2.0f - drawW * 0.5f);
+			int drawY = (int)(mHeight / 2.0f - scaleH * 0.5f);
+			g->DrawImage(IMAGE_GUIDE, drawX, drawY, (int)drawW, (int)scaleH);
+		}
+
+		int fadeOutAlpha = TodAnimateCurve(0, 30, mTitleStateDuration - mTitleStateCounter, 255, 0, TodCurves::CURVE_LINEAR);
+		g->SetColor(Color(255, 255, 255, fadeOutAlpha));
+		g->FillRect(0, 0, mWidth, mHeight);
+		g->SetColorizeImages(false);
+
+		return;
+	}
+#endif
+
 	if (!mLoaderScreenIsLoaded)
 	{
 		g->SetColor(Color::Black);
@@ -148,6 +207,24 @@ void TitleScreen::Draw(Graphics* g)
 		aLogoY = TodAnimateCurve(60, 50, mTitleStateCounter, 10 + BOARD_OFFSET_Y, 15 + BOARD_OFFSET_Y, CURVE_BOUNCE);
 	}
 	g->DrawImage(IMAGE_PVZ_LOGO, mWidth / 2 - IMAGE_PVZ_LOGO->mWidth / 2, aLogoY);
+
+#ifdef SEXY_CONSOLE
+	float sinVal = (std::sin(mTitleAge * 0.035f) + 1.0f) * 0.5f;
+	if (sinVal > 0.7f)
+	{
+		int ballX = (int)(mWidth * 682.0f / 1280.0f);
+		int ballY = (int)(mHeight * 325.0f / 720.0f);
+		g->DrawImage(IMAGE_TITLESCREEN_BALL, ballX, ballY);
+
+		int glowX = (int)(mWidth * 575.0f / 1280.0f);
+		int glowY = (int)(mHeight * 213.0f / 720.0f);
+		g->SetColorizeImages(true);
+		int glowAlpha = (int)((sinVal - 0.5f) * 255.0f);
+		g->SetColor(Color(255, 255, 255, glowAlpha));
+		g->DrawImage(IMAGE_TITLESCREEN_GLOW, glowX, glowY);
+		g->SetColorizeImages(false);
+	}
+#endif
 
 	int aGrassX = mStartButton->mX;
 	int aGrassY = mStartButton->mY - 17;
@@ -236,6 +313,11 @@ void TitleScreen::Update()
 	{
 		if (mTitleStateCounter == 0)
 		{
+#ifdef SEXY_CONSOLE
+			mTitleState = TitleState::TITLESTATE_ESRB;
+			mTitleStateDuration = 200;
+			mTitleStateCounter = 200;
+#else
 			if (mDisplayPartnerLogo)
 			{
 				mTitleState = TitleState::TITLESTATE_SCREEN;
@@ -248,6 +330,7 @@ void TitleScreen::Update()
 				mTitleStateDuration = 100;
 				mTitleStateCounter = 100;
 			}
+#endif
 		}
 
 		return;
@@ -263,6 +346,41 @@ void TitleScreen::Update()
 
 		return;
 	}
+
+#ifdef SEXY_CONSOLE
+	if (mTitleState == TitleState::TITLESTATE_ESRB)
+	{
+		if (mTitleStateCounter == 0)
+		{
+			if (IMAGE_GUIDE)
+			{
+				mTitleState = TitleState::TITLESTATE_GUIDE_LOGO;
+				mTitleStateDuration = 400;
+				mTitleStateCounter = 400;
+			}
+			else
+			{
+				mTitleState = TitleState::TITLESTATE_SCREEN;
+				mTitleStateDuration = 100;
+				mTitleStateCounter = 100;
+			}
+		}
+
+		return;
+	}
+
+	if (mTitleState == TitleState::TITLESTATE_GUIDE_LOGO)
+	{
+		if (mTitleStateCounter == 0)
+		{
+			mTitleState = TitleState::TITLESTATE_SCREEN;
+			mTitleStateDuration = 100;
+			mTitleStateCounter = 100;
+		}
+
+		return;
+	}
+#endif
 
 	if (!mLoaderScreenIsLoaded)
 	{
@@ -329,6 +447,16 @@ void TitleScreen::Update()
 		mStartButton->mLabel = TodStringTranslate(_S("[CLICK_TO_START]"));
 		mCurBarWidth = mTotalBarWidth;
 	}
+
+#ifdef SEXY_CONSOLE
+	if (mLoadingThreadComplete)
+	{
+		mStartButton->mEnableGlow = true;
+		mStartButton->mGlowAngle += 0.03f;
+		if (mStartButton->mGlowAngle > 3.14159265f)
+			mStartButton->mGlowAngle -= 3.14159265f;
+	}
+#endif
 
 	if (aLoadingPercent > mPrevLoadingPercent + 0.01f || mLoadingThreadComplete)
 	{

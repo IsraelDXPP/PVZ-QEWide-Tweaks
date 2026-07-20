@@ -2,6 +2,7 @@
 
 #define SEXY_FUSION_GLOVE
 #define SEXY_FREE_MALLET
+#define SEXY_CONSOLE
 
 #define ENUM_VALUE(name, value) name = value,
 #define ENUM_AUTO_VALUE(name) name,

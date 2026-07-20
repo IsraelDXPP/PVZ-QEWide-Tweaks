@@ -16,6 +16,10 @@
   <Image id="LOADBAR_DIRT" path="LoadBar_dirt" />
   <Image id="LOADBAR_GRASS" path="LoadBar_grass" />
   <Image id="PVZ_LOGO" path="PvZ_Logo" />
+  <Image id="ESRB_RATING" path="ESRB_RATING" />
+  <Image id="TITLESCREEN_BALL" path="titlescreen_ball" />
+  <Image id="TITLESCREEN_GLOW" path="titlescreen_glow" />
+  <Image id="GUIDE" path="guide" />
 
   <SetDefaults path="reanim" idprefix="IMAGE_REANIM_" />
   <Image id="SODROLLCAP" path="SodRollCap" />

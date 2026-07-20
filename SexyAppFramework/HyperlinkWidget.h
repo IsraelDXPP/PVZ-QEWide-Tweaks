@@ -2,6 +2,7 @@
 #define __HYPERLINKWIDGET_H__
 
 #include "ButtonWidget.h"
+#include "../../ConstEnums.h"
 
 namespace Sexy
 {
@@ -13,6 +14,10 @@ public:
 	Color					mOverColor;
 	int						mUnderlineSize;
 	int						mUnderlineOffset;
+#ifdef SEXY_CONSOLE
+	bool					mEnableGlow;
+	float					mGlowAngle;
+#endif
 
 public:
 	HyperlinkWidget(int theId, ButtonListener* theButtonListener);

@@ -154,6 +154,7 @@ void CursorObject::Draw(Graphics* g)
                 aOffsetY += 30.0f;
             }
             Plant::DrawSeedType(g, aPlant->mSeedType, aPlant->mImitaterType, DrawVariation::VARIATION_NORMAL, aOffsetX, aOffsetY);
+            g->DrawImage(Sexy::IMAGE_ZEN_GARDENGLOVE, -22.0f, -15.0f);
         }
 #else
         PottedPlant* aPottedPlant = &mApp->mPlayerInfo->mPottedPlant[aPlant->mPottedPlantIndex];
@@ -245,6 +246,19 @@ void CursorPreview::Update()
     SeedType aSeedType = mBoard->GetSeedTypeInCursor();
     int aMouseX = mApp->mWidgetManager->mLastMouseX;
     int aMouseY = mApp->mWidgetManager->mLastMouseY;
+
+#ifdef SEXY_FUSION_GLOVE
+    if (mBoard->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
+    {
+        mX = aMouseX - mBoard->mX;
+        mY = aMouseY - mBoard->mY;
+        mGridX = mBoard->PlantingPixelToGridX(aMouseX, aMouseY, aSeedType);
+        mGridY = mBoard->PlantingPixelToGridY(aMouseX, aMouseY, aSeedType);
+        mVisible = true;
+        return;
+    }
+#endif
+
     mGridX = mBoard->PlantingPixelToGridX(aMouseX, aMouseY, aSeedType);
     mGridY = mBoard->PlantingPixelToGridY(aMouseX, aMouseY, aSeedType);
     if (mGridX >= 0 && mGridX < MAX_GRID_SIZE_X && mGridY >= 0 && mGridY <= MAX_GRID_SIZE_Y)
@@ -279,6 +293,11 @@ void CursorPreview::Draw(Graphics* g)
     SeedType aSeedType = mBoard->GetSeedTypeInCursor();
     if (aSeedType == SeedType::SEED_NONE)
         return;
+
+#ifdef SEXY_FUSION_GLOVE
+    if (mBoard->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE)
+        return;
+#endif
 
     g->SetColorizeImages(true);
     g->SetColor(Color(255, 255, 255, 100));

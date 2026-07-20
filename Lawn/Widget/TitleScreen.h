@@ -3,7 +3,6 @@
 
 #include "../../SexyAppFramework/Widget.h"
 #include "../../SexyAppFramework/ButtonListener.h"
-
 using namespace Sexy;
 
 enum TitleState
@@ -11,7 +10,9 @@ enum TitleState
 	TITLESTATE_WAITING_FOR_FIRST_DRAW,
 	TITLESTATE_POPCAP_LOGO,
 	TITLESTATE_PARTNER_LOGO,
-	TITLESTATE_SCREEN
+	TITLESTATE_SCREEN,
+	TITLESTATE_ESRB,
+	TITLESTATE_GUIDE_LOGO,
 };
 
 namespace Sexy

@@ -2632,11 +2632,19 @@ void Plant::UpdateReanimColor()
     {
         aColorOverride = Color(128, 128, 128);
     }
+#ifdef SEXY_FUSION_GLOVE
+    else if (mBoard->mCursorObject->mCursorType != CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE && IsPartOfUpgradableTo(aSeedType) && mBoard->CanPlantAt(mPlantCol, mRow, aSeedType) == PLANTING_OK)
+#else
     else if (IsPartOfUpgradableTo(aSeedType) && mBoard->CanPlantAt(mPlantCol, mRow, aSeedType) == PLANTING_OK)
+#endif
     {
         aColorOverride = GetFlashingColor(mBoard->mMainCounter, 90);
     }
+#ifdef SEXY_FUSION_GLOVE
+    else if (mBoard->mCursorObject->mCursorType != CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE && aSeedType == SeedType::SEED_COBCANNON && mSeedType == SeedType::SEED_KERNELPULT && mBoard->CanPlantAt(mPlantCol - 1, mRow, aSeedType) == PLANTING_OK)
+#else
     else if (aSeedType == SeedType::SEED_COBCANNON && mSeedType == SeedType::SEED_KERNELPULT && mBoard->CanPlantAt(mPlantCol - 1, mRow, aSeedType) == PLANTING_OK)
+#endif
     {
         aColorOverride = GetFlashingColor(mBoard->mMainCounter, 90);
     }

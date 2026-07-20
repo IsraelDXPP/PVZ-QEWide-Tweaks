@@ -3823,6 +3823,19 @@ void Board::MouseDownWithPlant(int x, int y, int theClickCount)
 	}
 
 	PlantingReason aReason = CanPlantAt(aGridX, aGridY, aPlantingSeedType);
+#ifdef SEXY_FUSION_GLOVE
+        if (mCursorObject->mCursorType ==
+            CursorType::CURSOR_TYPE_PLANT_FROM_GLOVE) {
+          PlantsOnLawn aPlantOnLawn;
+          GetPlantsOnLawn(aGridX, aGridY, &aPlantOnLawn);
+          if (aPlantOnLawn.mNormalPlant || aPlantOnLawn.mPumpkinPlant ||
+              aPlantOnLawn.mFlyingPlant) {
+            RefreshSeedPacketFromCursor();
+            mApp->PlayFoley(FoleyType::FOLEY_DROP);
+            return;
+          }
+        } else
+#endif
 	if (aReason != PlantingReason::PLANTING_OK)
 	{
 		if (aReason == PlantingReason::PLANTING_ONLY_ON_GRAVES)
